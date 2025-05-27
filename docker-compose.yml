@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  ptt-alertor:
+    build: .
+    ports:
+      - "${PTT_ALERTOR_HOST_PORT:-9090}:9090"  # PTT Alertor Web 服務
+      - "${GOPS_HOST_PORT:-6060}:6060"        # gops agent 監控服務
+    restart: always
+    environment:
+      - AUTH_USER=${AUTH_USER:-admin}
+      - AUTH_PW=${AUTH_PW:-admin_password} # 請在實際使用時更換為安全的密碼
+      - REDIS_URL=redis://redis:6379/0 # PTT Alertor 連接 Redis 的 URL
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET:-}
+      - LINE_CHANNEL_TOKEN=${LINE_CHANNEL_TOKEN:-}
+      - MESSENGER_ACCESS_TOKEN=${MESSENGER_ACCESS_TOKEN:-}
+      - MESSENGER_VERIFY_TOKEN=${MESSENGER_VERIFY_TOKEN:-}
+      - MESSENGER_APP_SECRET=${MESSENGER_APP_SECRET:-}
+      - DISCORD_WEBHOOK=${DISCORD_WEBHOOK:-} # 新增此行
+      # 提醒：實際部署時可能需要設定上述 TOKEN 等環境變數
+    depends_on:
+      - redis
+    networks:
+      - pttalertor-network
+
+  redis:
+    image: redis:alpine
+    container_name: pttalertor-redis # 新增/修改此行
+    restart: always
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379" # 可選：將 Redis 連接埠暴露給主機，方便調試
+    volumes:
+      - redis-data:/data # 持久化 Redis 資料
+    networks:
+      - pttalertor-network
+
+volumes:
+  redis-data: # 定義 Redis 資料卷
+
+networks:
+  pttalertor-network: # 自訂橋接網路
+    driver: bridge
