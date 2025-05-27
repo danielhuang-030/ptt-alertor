@@ -59,7 +59,8 @@ func sendMessage(c check) {
 
 	if discordWebhookURL != "" {
 		discordAttempted = true
-		err := discord.SendDiscord(discordWebhookURL, c.String())
+		// Modify the function call here
+		err := discord.SendTextMessage(discordWebhookURL, c.String()) // <--- Modification point
 		if err == nil {
 			discordSentSuccessfully = true
 			finalSentPlatforms = append(finalSentPlatforms, "discord")
