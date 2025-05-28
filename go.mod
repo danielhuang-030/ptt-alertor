@@ -21,6 +21,12 @@ require (
 )
 
 require (
+	github.com/bwmarrin/discordgo v0.29.0 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
+	golang.org/x/crypto v0.18.0 // indirect
+)
+
+require (
 	github.com/PuerkitoBio/goquery v0.0.0-20170520194520-2dc93891ab3b // indirect
 	github.com/andybalholm/cascadia v0.0.0-20161224141413-349dd0209470 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect

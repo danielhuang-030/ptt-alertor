@@ -25,6 +25,7 @@ type Profile struct {
 	Messenger       string `json:"messenger"`
 	Telegram        string `json:"telegram"`
 	TelegramChat    int64  `json:"telegramChat"`
+	DiscordChannelID string `json:"discord_channel_id,omitempty"`
 }
 
 type Driver interface {
