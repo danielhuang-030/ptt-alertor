@@ -17,7 +17,6 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/channels/telegram"
 	ctrlr "github.com/Ptt-Alertor/ptt-alertor/controllers"
 	"github.com/Ptt-Alertor/ptt-alertor/jobs"
-	"github.com/Ptt-Alertor/ptt-alertor/models/board" // Added import
 )
 
 var (
