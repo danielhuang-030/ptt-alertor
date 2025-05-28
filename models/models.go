@@ -13,5 +13,9 @@ var Article = func() *article.Article {
 	return article.NewArticle(new(article.DynamoDB))
 }
 var Board = func() *board.Board {
-	return board.NewBoard(new(board.DynamoDB), new(board.Redis))
+	// 舊的硬式編碼邏輯:
+	// return board.NewBoard(new(board.DynamoDB), new(board.Redis))
+
+	// 新的邏輯，使用 board_setup.go 中初始化的 Driver 和 Cacher:
+	return board.NewBoard(board.GetDefaultBoardDriver(), board.GetDefaultBoardCacher())
 }
