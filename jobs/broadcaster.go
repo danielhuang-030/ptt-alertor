@@ -12,6 +12,7 @@ var platforms = map[string]bool{
 	"line":      true,
 	"messenger": true,
 	"telegram":  true,
+	"discord":   true,
 }
 
 type Broadcaster struct {
@@ -46,6 +47,9 @@ func (bc Broadcaster) Send(plfms []string) error {
 		if platformBl["email"] {
 			go bc.sendEmail(u)
 		}
+		if platformBl["discord"] {
+			go bc.sendDiscord(u)
+		}
 	}
 	return nil
 }
@@ -70,4 +74,15 @@ func (bc Broadcaster) sendTelegram(u *user.User) {
 	bc.Profile.Telegram = u.Profile.Telegram
 	bc.Profile.TelegramChat = u.Profile.TelegramChat
 	ckCh <- bc
+}
+
+func (bc Broadcaster) sendDiscord(u *user.User) {
+	if u.Profile.DiscordChannelID != "" { // 只在使用者設定了 DiscordChannelID 時才發送
+		bc.Profile.DiscordChannelID = u.Profile.DiscordChannelID
+		// 假設 Checker (ckCh 的接收端) 會處理 Profile 中的 DiscordChannelID
+		// 並最終呼叫 discord.PushMessage(channelID, message, embed)
+		// 目前我們只需要將帶有 DiscordChannelID 的 Broadcaster 物件發送到 ckCh
+		bc.subType = "discord_broadcast" // 或一個更合適的 subType
+		ckCh <- bc
+	}
 }
