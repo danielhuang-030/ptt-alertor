@@ -84,6 +84,25 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// For now, only respond to commands in the default channel.
 	if channelID == defaultChannelID {
+		// Ensure user continuity for Discord interactions
+		err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.Author.ID)
+		if err != nil {
+			log.WithError(err).WithFields(log.Fields{
+				"userID":    m.Author.ID,
+				"channelID": m.ChannelID,
+				"guildID":   m.GuildID,
+			}).Error("Failed to ensure Discord user continuity in messageCreate")
+			// 決定是否要因為此錯誤而提前返回。取決於 HandleDiscordFollow 失敗的嚴重性。
+			// 為了保持指令處理的嘗試，這裡可以只記錄錯誤，不提前返回。
+			// 如果 HandleDiscordFollow 內部邏輯已確保帳號存在或建立，那麼這裡的錯誤可能不致命。
+		} else {
+			log.WithFields(log.Fields{
+				"userID":    m.Author.ID,
+				"channelID": m.ChannelID,
+				"guildID":   m.GuildID,
+			}).Info("Discord user continuity ensured in messageCreate")
+		}
+
 		// Call HandleCommand to process the message content.
 		// Assuming HandleCommand is designed to be called with isUser=true for actual user commands.
 		responseText := command.HandleCommand(m.Content, authorID, true)
