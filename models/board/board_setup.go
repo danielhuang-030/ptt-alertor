@@ -1,7 +1,6 @@
 package board
 
 import (
-	"fmt"
 	"os"
 
 	log "github.com/Ptt-Alertor/logrus"
