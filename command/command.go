@@ -544,34 +544,71 @@ func update(action updateAction, account string, boardNames []string, inputs ...
 
 func HandleLineFollow(id, accountType string) error {
 	u := models.User().Find(id)
+	isNewUser := u.Profile.Messenger == "" && u.Profile.Telegram == "" && u.Profile.DiscordChannelID == "" && u.Profile.Line == ""
+	
 	u.Profile.Line, u.Profile.Type = id, accountType
-	log.WithFields(log.Fields{
+	if u.Profile.Account == "" {
+		u.Profile.Account = id
+	}
+
+	logFields := log.Fields{
 		"id":       id,
 		"type":     accountType,
 		"platform": "line",
-	}).Info("User Join")
-	return handleFollow(u)
+		"isNew":    isNewUser,
+	}
+	if isNewUser {
+		log.WithFields(logFields).Info("New user joining via Line")
+	} else {
+		log.WithFields(logFields).Info("Existing user updated/re-joined via Line")
+	}
+	return handleFollow(u, isNewUser)
 }
 
 func HandleMessengerFollow(id string) error {
 	u := models.User().Find(id)
+	isNewUser := u.Profile.Line == "" && u.Profile.Telegram == "" && u.Profile.DiscordChannelID == "" && u.Profile.Messenger == ""
+	
 	u.Profile.Messenger = id
-	log.WithFields(log.Fields{
+	if u.Profile.Account == "" {
+		u.Profile.Account = id
+	}
+
+	logFields := log.Fields{
 		"id":       id,
 		"platform": "messenger",
-	}).Info("User Join")
-	return handleFollow(u)
+		"isNew":    isNewUser,
+	}
+	if isNewUser {
+		log.WithFields(logFields).Info("New user joining via Messenger")
+	} else {
+		log.WithFields(logFields).Info("Existing user updated/re-joined via Messenger")
+	}
+	return handleFollow(u, isNewUser)
 }
 
 func HandleTelegramFollow(id string, chatID int64) error {
 	u := models.User().Find(id)
+	isNewUser := u.Profile.Line == "" && u.Profile.Messenger == "" && u.Profile.DiscordChannelID == "" && u.Profile.Telegram == ""
+
 	u.Profile.Telegram = id
 	u.Profile.TelegramChat = chatID
-	log.WithFields(log.Fields{
+	if u.Profile.Account == "" {
+		u.Profile.Account = id
+	}
+	
+	logFields := log.Fields{
 		"id":       id,
+		"chatID":   chatID,
 		"platform": "telegram",
-	}).Info("User Join")
-	return handleFollow(u)
+		"isNew":    isNewUser,
+	}
+	if isNewUser {
+		log.WithFields(logFields).Info("New user joining via Telegram")
+	} else {
+		log.WithFields(logFields).Info("Existing user updated/re-joined via Telegram")
+	}
+	return handleFollow(u, isNewUser)
 }
 
 // HandleDiscordFollow handles user follow event from Discord.
@@ -579,92 +616,64 @@ func HandleTelegramFollow(id string, chatID int64) error {
 // guildID is the Discord Guild ID (server ID) if applicable.
 func HandleDiscordFollow(guildID, channelID, userID string) error {
 	u := models.User().Find(userID) // Use Discord User ID as the primary account identifier
+	// isNewUser check should be done before modifying the profile for the current platform
+	isNewUser := u.Profile.Line == "" && u.Profile.Messenger == "" && u.Profile.Telegram == "" && u.Profile.DiscordChannelID == ""
 
-	// If it's a new user, their u.Profile.Account will be empty.
-	// We should set it to their Discord userID.
+	// Set Discord specific details
+	u.Profile.DiscordChannelID = channelID
+	// Ensure Account ID is set, especially for new users.
+	// If Find(userID) initializes a user, Profile.Account might be empty.
+	// If an existing user is found by userID, Profile.Account should already be userID.
 	if u.Profile.Account == "" {
 		u.Profile.Account = userID
-	}
+	} else if u.Profile.Account != userID {
+        // This case implies Find(userID) found a user, but their stored Account is different.
+        // This might indicate an issue or a specific user management strategy not covered.
+        // For now, log a warning if this happens, as userID should be the consistent key.
+        log.Warnf("Found user by userID '%s', but existing Profile.Account '%s' differs. Proceeding with userID as Account.", userID, u.Profile.Account)
+        u.Profile.Account = userID // Prioritize userID from the event as the account identifier
+    }
 
-	u.Profile.DiscordChannelID = channelID
-	// u.Enable = true // handleFollow will manage this
 
-	log.WithFields(log.Fields{
+	logFields := log.Fields{
 		"userID":    userID,
 		"channelID": channelID,
 		"guildID":   guildID,
 		"platform":  "discord",
-	}).Info("User Join/Update via Discord")
+		"isNew":     isNewUser,
+	}
+	if isNewUser {
+		log.WithFields(logFields).Info("New user joining via Discord")
+	} else {
+		log.WithFields(logFields).Info("Existing user updated/re-joined via Discord")
+	}
 
-	return handleFollow(u)
+	return handleFollow(u, isNewUser)
 }
 
-func handleFollow(u user.User) error {
-	// If u.Profile.Account is already set (either existing user or set by a Handle[Platform]Follow function for a new user)
-	if u.Profile.Account != "" {
-		u.Enable = true
-		// For existing users, Update() is called.
-		// For new users, if Profile.Account was set by the caller (e.g. HandleDiscordFollow),
-		// this will still likely try to update a non-existent user if Save() path isn't hit first.
-		// The original logic of Save() checks if user exists.
-		// Let's ensure new users are saved.
-		if !models.User().Exist(u.Profile.Account) {
-			// This is a new user, ensure essential platform ID is part of the account or profile
-			// The individual Handle[Platform]Follow should have set the relevant platform ID and potentially Account.
-			// If Account is set, Save will use it.
-			u.Enable = true
-			err := u.Save()
-			if err != nil {
-				log.WithError(err).Errorf("Failed to save new user %s via handleFollow", u.Profile.Account)
-				return err
-			}
-			log.Infof("New user %s saved successfully via handleFollow.", u.Profile.Account)
-			return nil
-		}
-		// User exists, update them
-		err := u.Update()
-		if err != nil {
-			log.WithError(err).Errorf("Failed to update user %s via handleFollow", u.Profile.Account)
-			return err
-		}
-		log.Infof("User %s updated successfully via handleFollow.", u.Profile.Account)
-		return nil
-	}
-	// This block should ideally not be reached if Profile.Account is always set by callers for new users.
-	// Original logic for setting Account if it's empty:
-	log.Warnf("handleFollow called for user with empty Profile.Account. Attempting to infer account from platform IDs.")
-	if u.Profile.Messenger != "" {
-		u.Profile.Account = u.Profile.Messenger
-	} else if u.Profile.Line != "" {
-		u.Profile.Account = u.Profile.Line
-	} else if u.Profile.Telegram != "" {
-		u.Profile.Account = u.Profile.Telegram
-	} else if u.Profile.DiscordChannelID != "" && u.Profile.Account != "" { // Check u.Profile.Account as it might have been just set
-		// This case needs careful handling; if DiscordChannelID is the only thing, Account should be userID from Discord
-		// However, the caller (HandleDiscordFollow) should have already set u.Profile.Account = userID
-		log.Info("User has DiscordChannelID, Profile.Account should have been set by caller.")
-	} else {
-		log.Error("User has no identifiable platform ID to set as Account in handleFollow.")
-		return errors.New("cannot determine user account identifier in handleFollow")
+func handleFollow(u user.User, isNewUser bool) error {
+	u.Enable = true
+	if u.Profile.Account == "" {
+		// This should ideally not happen if callers ensure Profile.Account is set.
+		log.Error("handleFollow called with empty u.Profile.Account. This indicates an issue in the calling function.")
+		return errors.New("user account identifier is missing in handleFollow")
 	}
 
-	u.Enable = true
-	// Check again if user exists before saving, as account might have been inferred.
-	if !models.User().Exist(u.Profile.Account) {
-		err := u.Save()
-		if err != nil {
-			log.WithError(err).Errorf("Failed to save new user %s (inferred account) via handleFollow", u.Profile.Account)
+	if isNewUser {
+		log.Infof("Attempting to save new user %s", u.Profile.Account)
+		if err := u.Save(); err != nil {
+			log.Errorf("Failed to save new user %s: %v", u.Profile.Account, err)
 			return err
 		}
-		log.Infof("New user %s (inferred account) saved successfully via handleFollow.", u.Profile.Account)
-	} else {
-		// If user existed with the inferred account
-		err := u.Update()
-		if err != nil {
-			log.WithError(err).Errorf("Failed to update user %s (inferred account) via handleFollow", u.Profile.Account)
-			return err
-		}
-		log.Infof("User %s (inferred account) updated successfully via handleFollow.", u.Profile.Account)
+		log.Infof("Successfully saved new user %s", u.Profile.Account)
+		return nil
 	}
+
+	log.Infof("Attempting to update existing user %s", u.Profile.Account)
+	if err := u.Update(); err != nil {
+		log.Errorf("Failed to update user %s: %v", u.Profile.Account, err)
+		return err
+	}
+	log.Infof("Successfully updated user %s", u.Profile.Account)
 	return nil
 }
