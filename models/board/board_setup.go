@@ -11,6 +11,11 @@ var (
 	defaultBoardCacher Cacher
 )
 
+// Package-level init function to automatically initialize board storage.
+func init() {
+	InitBoardStorage()
+}
+
 // InitBoardStorage initializes the default board driver and cacher based on environment variables.
 // It should be called once at application startup.
 func InitBoardStorage() {
