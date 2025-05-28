@@ -74,6 +74,39 @@
 }
 ```
 
+## 環境變數 (Environment Variables)
+
+Ptt Alertor 的許多功能可以透過環境變數進行配置。以下是一些主要的設定選項：
+
+(此處未來可以補充其他服務相關的環境變數，如 `PTT_ALERTOR_HOST_PORT`, `AUTH_USER`, `AUTH_PW` 等。)
+
+### 看板資料儲存後端設定 (Board Data Storage Backend)
+
+Ptt Alertor 看板資料（如文章列表）的**預設儲存方式是使用本地檔案系統 (`file`)**。您可以根據您的部署環境和需求，透過以下環境變數選擇不同的儲存後端。
+
+*   **`BOARD_DRIVER_TYPE`**:
+    *   **說明**: 設定看板主要資料（文章列表等）的儲存驅動程式。**如果此環境變數未設定，系統將預設採用 `file` 驅動**。
+    *   **可選值**:
+        *   `file`: 使用伺服器本地檔案系統儲存。資料將以 JSON 格式儲存在 `BOARD_FILE_STORAGE_PATH` 指定的路徑下（若未指定 `BOARD_FILE_STORAGE_PATH`，則使用預設路徑）。這是系統的預設選項。
+        *   `dynamodb`: 使用 AWS DynamoDB 作為儲存後端。選擇此選項時，**必須確保 AWS 相關環境變數 (如 `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) 已正確設定**，否則可能導致服務啟動失敗或運行時錯誤。
+        *   `redis`: 使用 Redis 儲存。文章資料將以 JSON 字串格式儲存在 Redis 中。選擇此選項時，**必須確保 Redis 服務 (`REDIS_HOST_PORT`) 已正確設定且 Ptt Alertor 可以連線**。
+    *   **範例**: `BOARD_DRIVER_TYPE=redis` (若要使用 Redis 儲存)
+
+*   **`BOARD_FILE_STORAGE_PATH`**:
+    *   **說明**: 此變數在 `BOARD_DRIVER_TYPE` 設定為 `file` (包括未設定 `BOARD_DRIVER_TYPE` 而採用預設的 `file` 驅動時) 時使用，用以指定看板資料檔案的儲存目錄路徑。
+    *   如果此變數未設定（且使用 `file` 驅動），系統將使用一個內建的預設路徑 (例如：`./storage/board_articles/`)。
+    *   **範例**: `BOARD_FILE_STORAGE_PATH=/app/data/board_data`
+
+*   **`BOARD_CACHER_TYPE`**:
+    *   **說明**: 設定看板列表及看板是否存在等快取資訊的儲存驅動程式。
+    *   **可選值**:
+        *   `redis` (預設且目前唯一選項): 使用 Redis 進行快取。選擇此選項時，**必須確保 Redis 服務 (`REDIS_HOST_PORT`) 已正確設定且 Ptt Alertor 可以連線**。
+    *   **範例**: `BOARD_CACHER_TYPE=redis` (通常保持預設即可)
+
+**重要提示**:
+*   若使用 `dynamodb` 作為 `BOARD_DRIVER_TYPE`，請務必檢查您的 AWS 環境變數設定。
+*   若使用 `redis` (作為 `BOARD_DRIVER_TYPE` 或 `BOARD_CACHER_TYPE`)，請務必檢查 `REDIS_HOST_PORT` 設定並確認 Redis 服務可正常連線。
+
 ## 頻道支援
 
 Ptt-Alertor 目前支援透過以下頻道接收 PTT 文章通知：
