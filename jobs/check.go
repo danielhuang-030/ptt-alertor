@@ -1,7 +1,6 @@
 package jobs
 
 import (
-	"os" // Added import
 	"strings" // Added import
 	log "github.com/Ptt-Alertor/logrus"
 
