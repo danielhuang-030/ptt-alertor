@@ -28,17 +28,34 @@ var (
 )
 
 func init() {
-	log.Infof("Attempting to initialize Line bot client...")
-	log.Infof("Read LINE_CHANNEL_SECRET: [%s]", channelSecret)
-	log.Infof("Read LINE_CHANNEL_ACCESSTOKEN: [%s]", channelAccessToken)
-	bot, err = linebot.New(channelSecret, channelAccessToken)
-	if err != nil {
-		log.Fatal(err)
+	// 檢查 channelSecret 和 channelAccessToken 是否為空，如果為空可以直接警告並返回，避免呼叫 New()
+	if channelSecret == "" || channelAccessToken == "" {
+		log.Warnf("LINE_CHANNEL_SECRET or LINE_CHANNEL_ACCESSTOKEN is empty. Line channel will be disabled.")
+		bot = nil // 確保 bot 為 nil
+		return
+	}
+
+	var initErr error // Renamed err to initErr to avoid conflict with global err
+	bot, initErr = linebot.New(channelSecret, channelAccessToken)
+	if initErr != nil {
+		log.Warnf("Line Bot SDK initialization failed: %v. Line channel will be disabled.", initErr)
+		bot = nil // 確保 bot 在出錯時也為 nil
+		return // Added return here as well
+	}
+	// 如果成功，可以保留成功的日誌
+	if bot != nil {
+		log.Info("Line Bot SDK initialized successfully.")
 	}
 }
 
 func HandleRequest(_ http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	events, err := bot.ParseRequest(r)
+	if bot == nil {
+		log.Warn("Line channel is disabled, cannot handle request.")
+		// For an HTTP handler, you might also want to write an HTTP error response
+		// http.Error(w, "Line service not configured", http.StatusInternalServerError)
+		return
+	}
+	events, err := bot.ParseRequest(r) // Use global err here if it's intended for this scope
 	if err != nil {
 		log.WithError(err).Error("Line ParseRequest Error")
 	}
@@ -94,12 +111,16 @@ func handleFollowAndJoin(event *linebot.Event) {
 	// TODO: make all user naming change to account
 	// account will include group, room and user and make accountType as enum
 	accountID, accountType := getAccountIDAndType(event)
-	if err = command.HandleLineFollow(accountID, accountType); err != nil {
+	if err = command.HandleLineFollow(accountID, accountType); err != nil { // Use global err
 		log.WithError(err).Error("Line Follow Failed")
 	}
 
 	text := getLineNotifyConnectMessage(accountID, accountType)
-	_, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(text)).Do()
+	if bot == nil { // Added check before using bot
+		log.Warn("Line channel is disabled, cannot reply to follow/join event.")
+		return
+	}
+	_, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(text)).Do() // Use global err
 	if err != nil {
 		log.WithError(err).Error("Line Follow Reply Message Failed")
 	}
@@ -172,7 +193,12 @@ func getAccountIDAndType(event *linebot.Event) (id, accountType string) {
 }
 
 func PushTextMessage(id string, message string) {
-	_, err := bot.PushMessage(id, linebot.NewTextMessage(message)).Do()
+	if bot == nil {
+		log.Warn("Line channel is disabled, cannot push message.")
+		return
+	}
+	// 原有的 PushMessage 邏輯
+	_, err := bot.PushMessage(id, linebot.NewTextMessage(message)).Do() // Use global err
 	if err != nil {
 		log.WithError(err).Error("Line Push Message Failed")
 	} else {
@@ -192,14 +218,22 @@ func genConfirmMessage(command string) *linebot.TemplateMessage {
 }
 
 func replyMessage(token string, message ...linebot.SendingMessage) {
-	_, err := bot.ReplyMessage(token, message...).Do()
+	if bot == nil {
+		log.Warn("Line channel is disabled, cannot reply message.")
+		return
+	}
+	_, err := bot.ReplyMessage(token, message...).Do() // Use global err
 	if err != nil {
 		log.WithError(err).Error("Line Reply Message Failed")
 	}
 }
 
 func BroadcastTextMessage(ids []string, message string) {
-	_, err := bot.Multicast(ids, linebot.NewTextMessage(message)).Do()
+	if bot == nil {
+		log.Warn("Line channel is disabled, cannot broadcast message.")
+		return
+	}
+	_, err := bot.Multicast(ids, linebot.NewTextMessage(message)).Do() // Use global err
 	if err != nil {
 		log.WithError(err).Error("Line Broadcast Message Failed")
 	} else {

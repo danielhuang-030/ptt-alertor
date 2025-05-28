@@ -32,9 +32,6 @@ type Messenger struct {
 }
 
 func New() Messenger {
-	log.Infof("Initializing Messenger module...")
-	log.Infof("Read MESSENGER_VERIFYTOKEN: [%s]", verifyToken)
-	log.Infof("Read MESSENGER_ACCESSTOKEN: [%s]", accessToken)
 	return Messenger{
 		VerifyToken: verifyToken,
 		AccessToken: accessToken,
@@ -198,6 +195,11 @@ func (m *Messenger) SendListMessage(id string, StringMap map[string]string) {
 }
 
 func (m *Messenger) callSendAPI(body Request) error {
+	if m.AccessToken == "" {
+		errMsg := "Messenger AccessToken is not configured. Cannot call Send API."
+		log.Warn(errMsg)
+		return fmt.Errorf(errMsg)
+	}
 	url := sendAPIURL + m.AccessToken
 	return callAPI(url, body)
 }

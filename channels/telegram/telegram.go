@@ -25,28 +25,48 @@ var (
 )
 
 func init() {
-	log.Infof("Attempting to initialize Telegram bot client...")
-	log.Infof("Read TELEGRAM_TOKEN: [%s]", token)
-	log.Infof("Read APP_HOST for webhook: [%s]", host)
-	bot, err = tgbotapi.NewBotAPI(token)
-	if err != nil {
-		log.WithError(err).Fatal("Telegram Bot Initialize Failed")
+	if token == "" {
+		log.Warnf("TELEGRAM_TOKEN is empty. Telegram channel will be disabled.")
+		bot = nil
+		return
 	}
-	// bot.Debug = true
-	log.Info("Telegram Authorized on " + bot.Self.UserName)
 
+	var initErr error
+	bot, initErr = tgbotapi.NewBotAPI(token)
+	if initErr != nil {
+		log.Warnf("Telegram Bot initialization failed: %v. Telegram channel will be disabled.", initErr)
+		bot = nil
+		return
+	}
+	log.Info("Telegram Authorized on " + bot.Self.UserName) // Moved here
+
+	if host == "" {
+		log.Warnf("APP_HOST is empty. Cannot set Telegram webhook. Telegram channel functionality might be limited or disabled.")
+		bot = nil // 如果 Webhook 是必要的，則禁用
+		return
+	}
+	
 	webhookConfig := tgbotapi.NewWebhook(host + "/telegram/" + token)
 	webhookConfig.MaxConnections = 100
-	_, err = bot.SetWebhook(webhookConfig)
-	if err != nil {
-		log.WithError(err).Fatal("Telegram Bot Set Webhook Failed")
+	var whErr error // Use local error variable, matching prompt's whErr
+	_, whErr = bot.SetWebhook(webhookConfig) 
+	if whErr != nil {
+		log.Warnf("Telegram Bot set webhook failed: %v. Telegram channel will be disabled.", whErr)
+		bot = nil 
+		return
 	}
-	log.Info("Telegram Bot Sets Webhook Success")
+	log.Info("Telegram Bot Sets Webhook Success for " + bot.Self.UserName)
 }
 
 // HandleRequest handles request from webhook
 func HandleRequest(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	bytes, err := ioutil.ReadAll(r.Body)
+	if bot == nil {
+		log.Warn("Telegram channel is disabled, cannot handle request.")
+		// Optionally, write an HTTP error response to the client
+		// http.Error(w, "Telegram service is not configured or is currently unavailable.", http.StatusServiceUnavailable)
+		return
+	}
+	bytes, err := ioutil.ReadAll(r.Body) // Use local err
 	if err != nil {
 		log.WithError(err).Error("Telegram Read Request Body Failed")
 	}
@@ -141,9 +161,14 @@ func sendConfirmation(chatID int64, cmd string) {
 		))
 	msg := tgbotapi.NewMessage(chatID, "確定"+cmd+"？")
 	msg.ReplyMarkup = markup
-	_, err := bot.Send(msg)
-	if err != nil {
-		log.WithError(err).Error("Telegram Send Confirmation Failed")
+	if bot == nil {
+		log.Warn("Telegram channel is disabled, cannot send confirmation.")
+		return
+	}
+	var sendErr error // Use local err
+	_, sendErr = bot.Send(msg)
+	if sendErr != nil {
+		log.WithError(sendErr).Error("Telegram Send Confirmation Failed")
 	}
 }
 
@@ -151,21 +176,34 @@ const maxCharacters = 4096
 
 // SendTextMessage sends text message to chatID
 func SendTextMessage(chatID int64, text string) {
+	if bot == nil { // Added check for exported function
+		log.Warn("Telegram channel is disabled, cannot send message (exported function).")
+		return
+	}
 	for _, msg := range myutil.SplitTextByLineBreak(text, maxCharacters) {
 		sendTextMessage(chatID, msg)
 	}
 }
 
 func sendTextMessage(chatID int64, text string) {
+	if bot == nil {
+		log.Warn("Telegram channel is disabled, cannot send message (internal function).")
+		return
+	}
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.DisableWebPagePreview = true
-	_, err := bot.Send(msg)
-	if err != nil {
-		log.WithError(err).Error("Telegram Send Message Failed")
+	var sendErr error // Use local err
+	_, sendErr = bot.Send(msg)
+	if sendErr != nil {
+		log.WithError(sendErr).Error("Telegram Send Message Failed")
 	}
 }
 
 func showReplyKeyboard(chatID int64) {
+	if bot == nil {
+		log.Warn("Telegram channel is disabled, cannot show reply keyboard.")
+		return
+	}
 	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton("清單"),
@@ -175,17 +213,23 @@ func showReplyKeyboard(chatID int64) {
 		))
 	msg := tgbotapi.NewMessage(chatID, "顯示小鍵盤")
 	msg.ReplyMarkup = keyboard
-	_, err := bot.Send(msg)
-	if err != nil {
-		log.WithError(err).Error("Telegram Show Reply Keyboard Failed")
+	var sendErr error // Use local err
+	_, sendErr = bot.Send(msg)
+	if sendErr != nil {
+		log.WithError(sendErr).Error("Telegram Show Reply Keyboard Failed")
 	}
 }
 
 func hideReplyKeyboard(chatID int64) {
+	if bot == nil {
+		log.Warn("Telegram channel is disabled, cannot hide reply keyboard.")
+		return
+	}
 	msg := tgbotapi.NewMessage(chatID, "隱藏小鍵盤")
 	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
-	_, err := bot.Send(msg)
-	if err != nil {
-		log.WithError(err).Error("Telegram Hide Reply Keyboard Failed")
+	var sendErr error // Use local err
+	_, sendErr = bot.Send(msg)
+	if sendErr != nil {
+		log.WithError(sendErr).Error("Telegram Hide Reply Keyboard Failed")
 	}
 }
