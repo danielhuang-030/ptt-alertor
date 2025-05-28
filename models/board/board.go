@@ -166,7 +166,9 @@ func (bd Board) SuggestBoardName() string {
 }
 
 func CheckBoardExist(boardName string) (bool, string) {
-	bd := NewBoard(new(DynamoDB), new(Redis))
+	// Use the GetDefaultBoardDriver and GetDefaultBoardCacher functions
+	// to ensure the board is initialized with the globally configured storage options.
+	bd := NewBoard(GetDefaultBoardDriver(), GetDefaultBoardCacher())
 	bd.Name = boardName
 	if bd.Exist() {
 		return true, ""

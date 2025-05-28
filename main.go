@@ -17,6 +17,7 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/channels/telegram"
 	ctrlr "github.com/Ptt-Alertor/ptt-alertor/controllers"
 	"github.com/Ptt-Alertor/ptt-alertor/jobs"
+	"github.com/Ptt-Alertor/ptt-alertor/models/board" // Added import
 )
 
 var (
@@ -154,6 +155,9 @@ func startJobs() {
 }
 
 func init() {
+	// Initialize board storage first as other initial jobs might depend on it.
+	board.InitBoardStorage()
+
 	// for initial app
 	jobs.NewPushSumKeyReplacer().Run()
 	jobs.NewMigrateBoard(map[string]string{}).Run()
