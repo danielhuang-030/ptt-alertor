@@ -155,9 +155,6 @@ func startJobs() {
 }
 
 func init() {
-	// Initialize board storage first as other initial jobs might depend on it.
-	board.InitBoardStorage()
-
 	// for initial app
 	jobs.NewPushSumKeyReplacer().Run()
 	jobs.NewMigrateBoard(map[string]string{}).Run()
