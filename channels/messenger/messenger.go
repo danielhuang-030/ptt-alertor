@@ -32,6 +32,9 @@ type Messenger struct {
 }
 
 func New() Messenger {
+	log.Infof("Initializing Messenger module...")
+	log.Infof("Read MESSENGER_VERIFYTOKEN: [%s]", verifyToken)
+	log.Infof("Read MESSENGER_ACCESSTOKEN: [%s]", accessToken)
 	return Messenger{
 		VerifyToken: verifyToken,
 		AccessToken: accessToken,

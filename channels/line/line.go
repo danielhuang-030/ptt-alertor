@@ -28,6 +28,9 @@ var (
 )
 
 func init() {
+	log.Infof("Attempting to initialize Line bot client...")
+	log.Infof("Read LINE_CHANNEL_SECRET: [%s]", channelSecret)
+	log.Infof("Read LINE_CHANNEL_ACCESSTOKEN: [%s]", channelAccessToken)
 	bot, err = linebot.New(channelSecret, channelAccessToken)
 	if err != nil {
 		log.Fatal(err)
