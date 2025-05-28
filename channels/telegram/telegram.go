@@ -25,6 +25,9 @@ var (
 )
 
 func init() {
+	log.Infof("Attempting to initialize Telegram bot client...")
+	log.Infof("Read TELEGRAM_TOKEN: [%s]", token)
+	log.Infof("Read APP_HOST for webhook: [%s]", host)
 	bot, err = tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.WithError(err).Fatal("Telegram Bot Initialize Failed")
