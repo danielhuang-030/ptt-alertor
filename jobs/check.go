@@ -91,14 +91,20 @@ func sendMessage(c check) {
 	}
 	// If the key remains just the board name, cool-down is board-level.
 	// The goal is for the key to identify "the same batch of content" as precisely as possible.
+	log.WithFields(log.Fields{ // Log point 1
+		"calculated_notification_key": notificationKey,
+		"board":                       cr.board,
+		"sub_type":                    cr.subType,
+		"word":                        cr.word,
+	}).Debug("Notification key calculated for cool-down check.")
 
-	log.WithField("calculated_notification_key", notificationKey).Debug("Calculated notification key for cool-down check.")
-
+	log.WithField("notification_key_to_check", notificationKey).Debug("About to check cool-down status for notification key.") // Log point 2
 	recentlyNotifiedMutex.Lock()
 	lastNotifiedTime, found := recentlyNotifiedEvents[notificationKey]
 	currentTime := time.Now()
 	shouldSkipNotification := false
 	if found && currentTime.Sub(lastNotifiedTime) < notificationCoolDown {
+		// This existing Info log is good for when skipping occurs.
 		log.WithFields(log.Fields{
 			"notification_key":   notificationKey,
 			"last_notified_at":   lastNotifiedTime.Format(time.RFC3339),
@@ -108,6 +114,23 @@ func sendMessage(c check) {
 		shouldSkipNotification = true
 	}
 	recentlyNotifiedMutex.Unlock() // Unlock after read operations
+
+	// Log point 3: Details of the cool-down check
+	var timeSinceLastNotifyString string
+	if found {
+		timeSinceLastNotifyString = currentTime.Sub(lastNotifiedTime).String()
+	} else {
+		timeSinceLastNotifyString = "N/A (not found)"
+	}
+	log.WithFields(log.Fields{
+		"notification_key":        notificationKey,
+		"was_found_in_map":        found,
+		"time_since_last_notify":  timeSinceLastNotifyString,
+		"last_notified_time_raw":  lastNotifiedTime.Format(time.RFC3339), // Will be "0001-01-01T00:00:00Z" if not found
+		"cool_down_duration":      notificationCoolDown.String(),
+		"cool_down_active_for_key":found && currentTime.Sub(lastNotifiedTime) < notificationCoolDown,
+		"should_skip_notification":shouldSkipNotification,
+	}).Debug("Cool-down check details.")
 
 	if shouldSkipNotification {
 		return // Skip all sending if in cool-down
@@ -295,10 +318,18 @@ func sendMessage(c check) {
 		}).Info("Message Sent")
 
 		// --- New: Update cool-down timestamp for successfully sent notification ---
+		log.WithFields(log.Fields{ // Log point 4
+			"notification_key_to_update": notificationKey,
+			"current_time":               time.Now().Format(time.RFC3339),
+		}).Debug("Preparing to update cool-down timestamp for notification key.")
 		recentlyNotifiedMutex.Lock()
-		recentlyNotifiedEvents[notificationKey] = time.Now() // Use current time to update
+		currentTimeForUpdate := time.Now()
+		recentlyNotifiedEvents[notificationKey] = currentTimeForUpdate 
 		recentlyNotifiedMutex.Unlock()
-		log.WithField("notification_key_cooled_down", notificationKey).Debug("Updated cool-down timestamp for successfully sent notification key.")
+		log.WithFields(log.Fields{ // Log point 5 (modified existing log)
+			"notification_key_updated": notificationKey,
+			"new_timestamp":            currentTimeForUpdate.Format(time.RFC3339),
+		}).Debug("Cool-down timestamp successfully updated for notification key.")
 	} else {
         log.WithFields(log.Fields{
 			"account":  account, "board": cr.board, "type": cr.subType, "word": cr.word,
