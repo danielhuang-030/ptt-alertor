@@ -135,11 +135,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			s.ChannelMessageSend(m.ChannelID, "處理監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
 			return // Stop processing
 		}
-		textToHandle = parsedMentionCommand // "監聽" or "listen"
+		textToHandle = "internal_listen" // <--- MODIFIED HERE
 		executeCommand = true
 		// Update isChannelListening for the current request's scope, as it's now active.
 		isChannelListening = true 
-		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "newListeningState": isChannelListening}).Info("Processed 'listen' command.")
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "parsedInput": parsedMentionCommand, "newListeningState": isChannelListening}).Info("Processed 'listen' command.") // Added parsedInput for clarity
 
 	} else if botMentioned && (strings.EqualFold(parsedMentionCommand, "取消監聽") || strings.EqualFold(parsedMentionCommand, "unlisten")) {
 		// Pass raw m.ChannelID to HandleDiscordFollow.
@@ -148,11 +148,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			s.ChannelMessageSend(m.ChannelID, "處理取消監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
 			return // Stop processing
 		}
-		textToHandle = parsedMentionCommand // "取消監聽" or "unlisten"
+		textToHandle = "internal_unlisten" // <--- MODIFIED HERE
 		executeCommand = true
 		// Update isChannelListening for the current request's scope.
 		isChannelListening = false 
-		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "newListeningState": isChannelListening}).Info("Processed 'unlisten' command.")
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "parsedInput": parsedMentionCommand, "newListeningState": isChannelListening}).Info("Processed 'unlisten' command.") // Added parsedInput for clarity
 	
 	} else { // Not a listen/unlisten command, proceed with state-based logic
 		if isChannelListening {
