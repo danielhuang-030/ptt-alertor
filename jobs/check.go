@@ -146,11 +146,25 @@ func sendMessage(c check) {
 		}
 
 		// Added Debug log before PushMessage
-		if embed != nil {
-			log.WithFields(log.Fields{"target_discord_ch": cr.Profile.DiscordChannelID, "message_summary": messageContent[:myutil.Min(len(messageContent), 50)], "embed_title": embed.Title}).Debug("Details before calling discord.PushMessage")
+		var msgSummary string
+		if len(messageContent) > 50 {
+			msgSummary = messageContent[:50] + "..."
 		} else {
-			log.WithFields(log.Fields{"target_discord_ch": cr.Profile.DiscordChannelID, "message_summary": messageContent[:myutil.Min(len(messageContent), 50)]}).Debug("Details before calling discord.PushMessage (no embed)")
+			msgSummary = messageContent
 		}
+
+		var embTitle string
+		if embed != nil { // Ensure embed is not nil before accessing Title
+			embTitle = embed.Title
+		} else {
+			embTitle = "<nil_embed>" // Or some other placeholder if embed is nil
+		}
+
+		log.WithFields(log.Fields{
+			"target_discord_ch": cr.Profile.DiscordChannelID,
+			"message_summary":   msgSummary,
+			"embed_title":       embTitle,
+		}).Debug("Details before calling discord.PushMessage")
 
 		err := discord.PushMessage(cr.Profile.DiscordChannelID, messageContent, embed)
 		if err == nil {
