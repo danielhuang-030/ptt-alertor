@@ -122,8 +122,7 @@ func (c Checker) Run() {
 					offPeak = op
 				}
 			default:
-				// Now call checkBoards with the filtered normalBoards list
-				checkBoards(normalBoards, duration) 
+				checkBoards(models.Board().All(), duration)
 			}
 		}
 	}()
@@ -136,16 +135,8 @@ func (c Checker) Run() {
 			go checkKeywordSubscriber(bd, c)
 			go checkAuthorSubscriber(bd, c)
 		//step 3: send notification
-		case receivedCker := <-c.ch:
-			log.WithFields(log.Fields{
-				"targetUserAccount": receivedCker.Profile.Account,
-				"board": receivedCker.board,
-				"type": receivedCker.subType,
-				"word": receivedCker.word,
-				"articleCount": len(receivedCker.articles),
-				"action": "relaying_task_to_ckCh",
-			}).Info("Received notification task from c.ch, relaying to ckCh for actual sending.")
-			ckCh <- receivedCker
+		case cker := <-c.ch:
+			ckCh <- cker
 		case <-c.done:
 			cancel()
 			for len(boardCh) > 0 {
@@ -190,9 +181,7 @@ func checkBoards(bds []*board.Board, duration time.Duration) {
 }
 
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
-	log.WithFields(log.Fields{"board": bd.Name, "source": "checkNewArticle"}).Debug("Preparing to call bd.WithNewArticles()")
 	bd.WithNewArticles()
-	log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "source": "checkNewArticle"}).Debug("Returned from bd.WithNewArticles()")
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Created Articles")
@@ -202,7 +191,6 @@ func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Updated Articles")
 		if err := bd.Save(); err == nil {
-			log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "action": "sending_to_boardCh"}).Info("Board has new articles, sending to boardCh for processing.")
 			boardCh <- bd
 		}
 	}
@@ -232,12 +220,6 @@ func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
 }
 
 func checkKeyword(keyword string, bd *board.Board, cker Checker) {
-	log.WithFields(log.Fields{
-		"board": cker.board, // cker.board should be set before calling checkKeyword
-		"keyword": keyword,
-		"articlesToCheckCount": len(bd.NewArticles), 
-		"targetUserAccount": cker.Profile.Account, // Log the specific user account being checked for
-	}).Debug("Checking keyword match for user.")
 	keywordArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
 		if newAtcl.MatchKeyword(keyword) {
@@ -250,13 +232,6 @@ func checkKeyword(keyword string, bd *board.Board, cker Checker) {
 		cker.articles = keywordArticles
 		cker.subType = "keyword"
 		cker.word = keyword
-		log.WithFields(log.Fields{
-			"board": cker.board,
-			"keyword": keyword,
-			"matchedArticlesCount": len(keywordArticles),
-			"targetUserAccount": cker.Profile.Account,
-			"action": "sending_to_cker_ch_for_keyword",
-		}).Info("Keyword matched, sending notification task to cker.ch.")
 		cker.ch <- cker
 	}
 }
@@ -285,12 +260,6 @@ func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
 }
 
 func checkAuthor(author string, bd *board.Board, cker Checker) {
-	log.WithFields(log.Fields{
-		"board": cker.board, // cker.board should be set before calling checkAuthor
-		"author": author,
-		"articlesToCheckCount": len(bd.NewArticles),
-		"targetUserAccount": cker.Profile.Account,
-	}).Debug("Checking author match for user.")
 	authorArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
 		if strings.EqualFold(newAtcl.Author, author) {
@@ -302,13 +271,6 @@ func checkAuthor(author string, bd *board.Board, cker Checker) {
 		cker.articles = authorArticles
 		cker.subType = "author"
 		cker.word = author
-		log.WithFields(log.Fields{
-			"board": cker.board,
-			"author": author,
-			"matchedArticlesCount": len(authorArticles),
-			"targetUserAccount": cker.Profile.Account,
-			"action": "sending_to_cker_ch_for_author",
-		}).Info("Author matched, sending notification task to cker.ch.")
 		cker.ch <- cker
 	}
 }
