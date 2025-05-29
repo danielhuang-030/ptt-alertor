@@ -10,6 +10,7 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/channels/messenger"
 	"github.com/Ptt-Alertor/ptt-alertor/channels/telegram"
 	"github.com/Ptt-Alertor/ptt-alertor/models/counter"
+	"github.com/Ptt-Alertor/ptt-alertor/myutil" // Added import for ParseDiscordInternalID
 )
 
 const workers = 300
@@ -56,9 +57,24 @@ func sendMessage(c check) {
 	discordSentSuccessfully := false
 	if cr.Profile.DiscordChannelID != "" {
 		discordAttempted = true
-		log.WithFields(log.Fields{
-			"account": account, "channelID": cr.Profile.DiscordChannelID, "board": cr.board, "type": cr.subType, "word": cr.word,
-		}).Info("Attempting to send Discord notification via Bot")
+		
+		// Prepare base log fields for Discord notification attempt
+		attemptLogFields := log.Fields{
+			"platform":                  "discord_bot",
+			"board":                     cr.board,
+			"type":                      cr.subType,
+			"word":                      cr.word,
+			"notificationTargetChannelID": cr.Profile.DiscordChannelID, // Explicitly log the channel being sent to
+		}
+		parsedUserID, parsedChannelIDFromAccount, parseErr := myutil.ParseDiscordInternalID(account)
+		if parseErr == nil {
+			attemptLogFields["internalAccountID"] = account
+			attemptLogFields["discordUserID"] = parsedUserID
+			attemptLogFields["channelIDFromAccount"] = parsedChannelIDFromAccount
+		} else {
+			attemptLogFields["account"] = account // Fallback to original account if not internal ID format
+		}
+		log.WithFields(attemptLogFields).Info("Attempting to send Discord notification via Bot")
 
 		// 組裝 Embed (簡易版)
 		var embed *discord.Embed
@@ -119,10 +135,25 @@ func sendMessage(c check) {
 			if !containsString(finalSentPlatforms, "discord_bot") { //避免重複添加
 				finalSentPlatforms = append(finalSentPlatforms, "discord_bot")
 			}
+			// Successful send log can be part of the unified log at the end,
+			// or a specific one here using similar logFields if needed.
 		} else {
-			log.WithError(err).WithFields(log.Fields{
-				"account": account, "platform": "discord_bot", "board": cr.board, "type": cr.subType, "word": cr.word,
-			}).Warn("Failed to send Discord notification via Bot")
+			// Prepare detailed log fields for failure
+			failureLogFields := log.Fields{
+				"platform":                  "discord_bot",
+				"board":                     cr.board,
+				"type":                      cr.subType,
+				"word":                      cr.word,
+				"notificationTargetChannelID": cr.Profile.DiscordChannelID,
+			}
+			if parseErr == nil { // Use result from above parsing
+				failureLogFields["internalAccountID"] = account
+				failureLogFields["discordUserID"] = parsedUserID
+				failureLogFields["channelIDFromAccount"] = parsedChannelIDFromAccount
+			} else {
+				failureLogFields["account"] = account
+			}
+			log.WithError(err).WithFields(failureLogFields).Warn("Failed to send Discord notification via Bot")
 		}
 	}
 

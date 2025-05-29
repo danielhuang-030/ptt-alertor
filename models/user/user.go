@@ -16,16 +16,17 @@ type User struct {
 	drive      Driver
 }
 
+// Profile is user's profile
 type Profile struct {
-	Account         string `json:"account"`
-	Type            string `json:"type,omitempty"`
-	Email           string `json:"email"`
-	Line            string `json:"line"`
-	LineAccessToken string `json:"lineAccessToken"`
-	Messenger       string `json:"messenger"`
-	Telegram        string `json:"telegram"`
-	TelegramChat    int64  `json:"telegramChat"`
-	DiscordChannelID string `json:"discord_channel_id,omitempty"`
+	Account             string `json:"account"`
+	Email               string `json:"email,omitempty"`
+	Type                string `json:"type,omitempty"` // user, group, room
+	Line                string `json:"line,omitempty"`
+	LineAccessToken     string `json:"line_access_token,omitempty"`
+	Messenger           string `json:"messenger,omitempty"`
+	Telegram            string `json:"telegram,omitempty"`
+	TelegramChat        int64  `json:"telegram_chat_id,omitempty"`
+	DiscordChannelID    string `json:"discord_channel_id,omitempty"` // This will store the specific channel ID for notifications for this user profile
 }
 
 type Driver interface {

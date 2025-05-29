@@ -612,36 +612,36 @@ func HandleTelegramFollow(id string, chatID int64) error {
 }
 
 // HandleDiscordFollow handles user follow event from Discord.
-// userID is the Discord User ID, channelID is the Discord Channel ID where the command was initiated or for DMs.
+// userID is the original Discord User ID.
+// channelID is the Discord Channel ID where the command was initiated or for DMs.
 // guildID is the Discord Guild ID (server ID) if applicable.
 func HandleDiscordFollow(guildID, channelID, userID string) error {
-	u := models.User().Find(userID) // Use Discord User ID as the primary account identifier
-	// isNewUser check should be done before modifying the profile for the current platform
-	isNewUser := u.Profile.Line == "" && u.Profile.Messenger == "" && u.Profile.Telegram == "" && u.Profile.DiscordChannelID == ""
+	internalAccountID := myutil.CreateDiscordInternalID(userID, channelID)
+	u := models.User().Find(internalAccountID)
 
-	// Set Discord specific details
-	u.Profile.DiscordChannelID = channelID
-	// Ensure Account ID is set, especially for new users.
-	// If Find(userID) initializes a user, Profile.Account might be empty.
-	// If an existing user is found by userID, Profile.Account should already be userID.
-	if u.Profile.Account == "" {
-		u.Profile.Account = userID
-	} else if u.Profile.Account != userID {
-        // This case implies Find(userID) found a user, but their stored Account is different.
-        // This might indicate an issue or a specific user management strategy not covered.
-        // For now, log a warning if this happens, as userID should be the consistent key.
-        log.Warnf("Found user by userID '%s', but existing Profile.Account '%s' differs. Proceeding with userID as Account.", userID, u.Profile.Account)
-        u.Profile.Account = userID // Prioritize userID from the event as the account identifier
-    }
+	// Determine if this is a new user based on the state of the found/created 'u' object,
+	// before any new assignments for the current interaction (except for Account which might be new).
+	isNewUser := u.Profile.Line == "" &&
+		u.Profile.Messenger == "" &&
+		u.Profile.Telegram == "" &&
+		u.Profile.Email == "" &&
+		u.Profile.DiscordChannelID == "" // Check if DiscordChannelID was also empty before this interaction
 
+	// Set or update the user's profile
+	u.Profile.Account = internalAccountID           // The primary account key is now the internal composite ID
+	u.Profile.DiscordChannelID = channelID         // Store the specific channel for notifications/responses
+	// u.Profile.OriginalDiscordUserID = userID    // This line is now removed
+	// u.Profile.Type = "discord_channel_user" // Example: Consider a specific type
 
 	logFields := log.Fields{
-		"userID":    userID,
-		"channelID": channelID,
-		"guildID":   guildID,
-		"platform":  "discord",
-		"isNew":     isNewUser,
+		"internalAccountID": internalAccountID,
+		// "originalUserID":    userID, // Removed as OriginalDiscordUserID is no longer stored in Profile
+		"channelID":         channelID,
+		"guildID":           guildID,
+		"isNew":             isNewUser,
+		"platform":          "discord",
 	}
+
 	if isNewUser {
 		log.WithFields(logFields).Info("New user joining via Discord")
 	} else {
