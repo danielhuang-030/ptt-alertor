@@ -90,7 +90,7 @@ func (c Checker) Run() {
 			case <-ctx.Done():
 				return
 			default:
-				checkBoards(highBoards, checkHighBoardDuration)
+				checkBoards(highBoards, checkHighBoardDuration, nil)
 			}
 		}
 	}()
@@ -103,6 +103,10 @@ func (c Checker) Run() {
 	go func() {
 		var offPeak bool
 		duration := c.duration
+		highBoardNamesSet := make(map[string]struct{})
+		for _, bd := range highBoards {
+			highBoardNamesSet[bd.Name] = struct{}{}
+		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -122,7 +126,7 @@ func (c Checker) Run() {
 					offPeak = op
 				}
 			default:
-				checkBoards(models.Board().All(), duration)
+				checkBoards(models.Board().All(), duration, highBoardNamesSet)
 			}
 		}
 	}()
@@ -173,8 +177,14 @@ func (c Checker) Stop() {
 	log.Info("Checker Stop")
 }
 
-func checkBoards(bds []*board.Board, duration time.Duration) {
+func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
 	for _, bd := range bds {
+		if skipNames != nil {
+			if _, shouldSkip := skipNames[bd.Name]; shouldSkip {
+				log.WithField("board", bd.Name).Debug("Skipping board in normal check as it's a high priority board")
+				continue // 跳過這個看板，因為它在 skipNames 中
+			}
+		}
 		time.Sleep(duration)
 		go checkNewArticle(bd, boardCh)
 	}
