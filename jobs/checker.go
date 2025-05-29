@@ -26,7 +26,6 @@ var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
 func init() {
 	for _, name := range highBoardNames {
-		name = strings.ToLower(name)
 		bd := models.Board()
 		bd.Name = name
 		highBoards = append(highBoards, bd)
@@ -91,7 +90,8 @@ func (c Checker) Run() {
 			case <-ctx.Done():
 				return
 			default:
-				checkBoards(highBoards, checkHighBoardDuration, nil)
+				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards")
+				checkBoards(highBoards, checkHighBoardDuration)
 			}
 		}
 	}()
@@ -104,10 +104,6 @@ func (c Checker) Run() {
 	go func() {
 		var offPeak bool
 		duration := c.duration
-		highBoardNamesSet := make(map[string]struct{})
-		for _, bd := range highBoards { // bd.Name is already lowercased from init()
-			highBoardNamesSet[bd.Name] = struct{}{}
-		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -127,7 +123,9 @@ func (c Checker) Run() {
 					offPeak = op
 				}
 			default:
-				checkBoards(models.Board().All(), duration, highBoardNamesSet)
+				allBoards := models.Board().All()
+				log.WithField("normal_boards_count", len(allBoards)).Debug("Processing normal boards")
+				checkBoards(allBoards, duration)
 			}
 		}
 	}()
@@ -178,22 +176,19 @@ func (c Checker) Stop() {
 	log.Info("Checker Stop")
 }
 
-func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
+func checkBoards(bds []*board.Board, duration time.Duration) {
+	log.WithField("boards_to_check_count", len(bds)).Debug("checkBoards received boards")
 	for _, bd := range bds {
-		if skipNames != nil {
-			boardNameLower := strings.ToLower(bd.Name)
-			if _, shouldSkip := skipNames[boardNameLower]; shouldSkip {
-				log.WithField("board", bd.Name).Debug("Skipping board in normal check as it's a high priority board (name standardized)") // 更新日誌訊息
-				continue
-			}
-		}
+		log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Starting checkNewArticle goroutine")
 		time.Sleep(duration)
 		go checkNewArticle(bd, boardCh)
 	}
 }
 
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
+	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Info("checkNewArticle BEGIN")
 	bd.WithNewArticles()
+	log.WithFields(log.Fields{"board_name": bd.Name, "new_articles_count": len(bd.NewArticles), "online_articles_count": len(bd.OnlineArticles)}).Debug("Articles status after WithNewArticles")
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Created Articles")
@@ -203,96 +198,101 @@ func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Updated Articles")
 		if err := bd.Save(); err == nil {
+			log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Sending board to boardCh")
 			boardCh <- bd
 		}
 	}
 }
 
 func checkKeywordSubscriber(bd *board.Board, cker Checker) {
+	// Note: cker.Profile.Account might be empty here if this is the first time for this cker instance
+	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_keywords": cker.Profile.Account}).Debug("checkKeywordSubscriber BEGIN")
 	u := models.User()
 	accounts := keyword.Subscribers(bd.Name)
 	for _, account := range accounts {
 		user := u.Find(account)
 		if user.Enable {
-			cker.Profile = user.Profile
-			go checkKeywordSubscription(user, bd, cker)
+			// Profile is now specific to this user for the subsequent subscription check
+			localCker := cker
+			localCker.Profile = user.Profile
+			go checkKeywordSubscription(user, bd, localCker)
 		}
 	}
 }
 
 func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
-	processedKeywordsThisUserBoard := make(map[string]bool)
+	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkKeywordSubscription BEGIN")
 	for _, sub := range user.Subscribes {
-		if bd.Name == strings.ToLower(sub.Board) {
-			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
+		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "sub_board": sub.Board, "sub_keywords": strings.Join(sub.Keywords, ",")}).Debug("Checking subscription rule")
+		if bd.Name == sub.Board {
+			cker.board = sub.Board
 			for _, keyword := range sub.Keywords {
-				lowerKeyword := strings.ToLower(keyword)
-				if !processedKeywordsThisUserBoard[lowerKeyword] {
-					processedKeywordsThisUserBoard[lowerKeyword] = true
-					go checkKeyword(lowerKeyword, bd, cker)
-				}
+				go checkKeyword(keyword, bd, cker)
 			}
 		}
 	}
 }
 
-func checkKeyword(keywordLowercase string, bd *board.Board, cker Checker) {
+func checkKeyword(keyword string, bd *board.Board, cker Checker) {
 	keywordArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if newAtcl.MatchKeyword(keywordLowercase) {
+		if newAtcl.MatchKeyword(keyword) {
 			newAtcl.Author = ""
 			keywordArticles = append(keywordArticles, newAtcl)
 		}
 	}
 	if len(keywordArticles) != 0 {
-		cker.keyword = keywordLowercase
+		cker.keyword = keyword
 		cker.articles = keywordArticles
 		cker.subType = "keyword"
-		cker.word = keywordLowercase
+		cker.word = keyword
+		log.WithFields(log.Fields{"board": cker.board, "keyword": cker.keyword, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkKeyword")
 		cker.ch <- cker
 	}
 }
 
 func checkAuthorSubscriber(bd *board.Board, cker Checker) {
+	// Note: cker.Profile.Account might be empty here
+	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_authors": cker.Profile.Account}).Debug("checkAuthorSubscriber BEGIN")
 	u := models.User()
 	accounts := author.Subscribers(bd.Name)
 	for _, account := range accounts {
 		user := u.Find(account)
 		if user.Enable {
-			cker.Profile = user.Profile
-			go checkAuthorSubscription(user, bd, cker)
+			// Profile is now specific to this user for the subsequent subscription check
+			localCker := cker
+			localCker.Profile = user.Profile
+			go checkAuthorSubscription(user, bd, localCker)
 		}
 	}
 }
 
 func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
-	processedAuthorsThisUserBoard := make(map[string]bool)
+	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkAuthorSubscription BEGIN")
 	for _, sub := range user.Subscribes {
-		if bd.Name == strings.ToLower(sub.Board) {
-			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
+		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "sub_board": sub.Board, "sub_authors": strings.Join(sub.Authors, ",")}).Debug("Checking subscription rule")
+		if bd.Name == sub.Board {
+			cker.board = sub.Board
 			for _, author := range sub.Authors {
-				lowerAuthor := strings.ToLower(author)
-				if !processedAuthorsThisUserBoard[lowerAuthor] {
-					processedAuthorsThisUserBoard[lowerAuthor] = true
-					go checkAuthor(lowerAuthor, bd, cker)
-				}
+				go checkAuthor(author, bd, cker)
 			}
 		}
 	}
 }
 
-func checkAuthor(authorLowercase string, bd *board.Board, cker Checker) {
+func checkAuthor(author string, bd *board.Board, cker Checker) {
 	authorArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if strings.EqualFold(newAtcl.Author, authorLowercase) {
+		if strings.EqualFold(newAtcl.Author, author) {
 			authorArticles = append(authorArticles, newAtcl)
 		}
 	}
 	if len(authorArticles) != 0 {
-		cker.author = authorLowercase
+		cker.author = author
 		cker.articles = authorArticles
 		cker.subType = "author"
-		cker.word = authorLowercase
+		cker.word = author
+		log.WithFields(log.Fields{"board": cker.board, "author": cker.author, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkAuthor")
 		cker.ch <- cker
 	}
 }
