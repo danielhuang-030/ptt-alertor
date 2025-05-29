@@ -24,6 +24,17 @@ var boardCh = make(chan *board.Board, 700)
 var highBoards []*board.Board
 var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
+var (
+	// processingBoardTimes stores the last time a board check was initiated.
+	// Key: standardized board name (string)
+	// Value: time.Time when processing started
+	processingBoardTimes = make(map[string]time.Time)
+	// processingBoardMutex protects access to processingBoardTimes
+	processingBoardMutex = &sync.Mutex{}
+	// coolDownDuration defines how long a board should "cool down" before being processed again.
+	coolDownDuration = 3 * time.Minute // Default 3 minutes cool-down
+)
+
 func init() {
 	for _, name := range highBoardNames {
 		standardizedName := strings.ToLower(strings.TrimSpace(name))
@@ -122,25 +133,33 @@ func (c Checker) Run() {
 	go func() {
 		var offPeak bool
 		duration := c.duration
-		// Create set of high priority board names to skip them in normal processing
+		// Dynamically create set of high priority board names to skip them in normal processing
 		highBoardNamesSet := make(map[string]struct{})
-		for _, bd := range highBoards { // highBoards[*].Name is already standardized
-			highBoardNamesSet[bd.Name] = struct{}{}
+		envBoardHigh := os.Getenv("BOARD_HIGH")
+		log.WithField("BOARD_HIGH_env_val", envBoardHigh).Debug("Read BOARD_HIGH for dynamic skip set creation.")
+		if envBoardHigh != "" {
+			names := strings.Split(envBoardHigh, ",")
+			for _, name := range names {
+				standardizedName := strings.ToLower(strings.TrimSpace(name))
+				if standardizedName != "" {
+					highBoardNamesSet[standardizedName] = struct{}{}
+					log.WithField("board_added_to_skip_set", standardizedName).Debug("Dynamically added to highBoardNamesSet for normal board skipping")
+				}
+			}
 		}
-		log.Debug("--- High Priority Board Names Set (for skipping) ---")
-		i := 0
-		for name := range highBoardNamesSet {
-			log.WithFields(log.Fields{
-				"index": i,
-				"name_in_set_as_is": name,
-				"name_in_set_q":     fmt.Sprintf("%q", name),
-			}).Debug("Name in highBoardNamesSet")
-			i++
+		// Log details of the dynamically created set
+		if len(highBoardNamesSet) == 0 {
+			log.Debug("highBoardNamesSet (for skipping normal boards) is EMPTY after dynamic parsing from ENV.")
+		} else {
+			log.WithField("skip_set_count", len(highBoardNamesSet)).Debug("highBoardNamesSet (for skipping normal boards) populated dynamically from ENV.")
+			// Optional: Log all names in the set if needed for super detailed debugging
+			// i_dyn := 0
+			// for name_in_set := range highBoardNamesSet {
+			// 	log.WithFields(log.Fields{"index": i_dyn, "name_in_dynamic_set_q": fmt.Sprintf("%q", name_in_set)}).Debug("Name in dynamically created highBoardNamesSet")
+			// 	i_dyn++
+			// }
 		}
-		if i == 0 {
-			log.Debug("highBoardNamesSet is EMPTY")
-		}
-		log.Debug("--- End of High Priority Board Names Set ---")
+
 
 		for {
 			select {
@@ -250,32 +269,57 @@ func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[strin
 	}
 
 	for _, bd := range bds {
-		originalNameLoop := bd.Name // Assuming bd.Name is already standardized
-		standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for log
+		originalNameLoop := bd.Name // Assuming bd.Name is already standardized by its creator
+		standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for logging consistency
 		log.WithFields(log.Fields{
 			"board_name_as_is":  originalNameLoop,
 			"board_name_q":      fmt.Sprintf("%q", originalNameLoop),
-			"standardized_name": standardizedNameLoop, // This is what should be used for lookup
+			"standardized_name": standardizedNameLoop,
 			"standardized_name_q": fmt.Sprintf("%q", standardizedNameLoop),
 			"board_ptr":         fmt.Sprintf("%p", bd),
-		}).Debug("Board in checkBoards loop (before skip check)")
+		}).Debug("Board in checkBoards loop (before skip and cool-down check)")
 
-		// bd.Name is assumed to be standardized (lowercase, trimmed) by its creator (Board.All() or init())
+		// SkipNames check (bd.Name should be used here as it's expected to be standardized by creator)
 		if skipNames != nil {
-			// standardizedNameLoop is the name we should check in skipNames
-			_, shouldSkip := skipNames[standardizedNameLoop] // Use the definitely standardized name for lookup
+			_, shouldSkip := skipNames[bd.Name] // bd.Name is the standardized name
 			log.WithFields(log.Fields{
-				"board_name_checked": standardizedNameLoop,
-				"board_name_checked_q": fmt.Sprintf("%q", standardizedNameLoop),
+				"board_name_checked": bd.Name,
+				"board_name_checked_q": fmt.Sprintf("%q", bd.Name),
 				"found_in_skipNames": shouldSkip,
 			}).Debug("skipNames check result")
 			if shouldSkip {
-				log.WithField("board", standardizedNameLoop).Debug("Skipping board as it was found in skipNames.") // Original log
+				log.WithField("board", bd.Name).Debug("Skipping board as it was found in skipNames.")
 				continue
 			}
 		}
-		log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Starting checkNewArticle goroutine")
-		time.Sleep(duration)
+
+		// --- Cool-down Logic ---
+		processingBoardMutex.Lock() // Lock for accessing processingBoardTimes
+		lastProcessedTime, found := processingBoardTimes[bd.Name] // bd.Name is standardized
+		currentTime := time.Now()
+
+		if found && currentTime.Sub(lastProcessedTime) < coolDownDuration {
+			// Still in cool-down period
+			log.WithFields(log.Fields{
+				"board_name": bd.Name,
+				"last_processed": lastProcessedTime.Format(time.RFC3339),
+				"cool_down_duration": coolDownDuration.String(),
+				"time_since_last": currentTime.Sub(lastProcessedTime).String(),
+			}).Debug("Board is in cool-down period, skipping checkNewArticle.")
+			processingBoardMutex.Unlock() // Unlock before continue
+			continue 
+		}
+		// Not in cool-down, or cool-down expired, or never processed. Update time.
+		processingBoardTimes[bd.Name] = currentTime
+		processingBoardMutex.Unlock() // Unlock after update
+
+		log.WithFields(log.Fields{ 
+			"board_name": bd.Name, 
+			"board_ptr": fmt.Sprintf("%p", bd),
+			"last_processed_update_to": currentTime.Format(time.RFC3339),
+		}).Debug("Board not in cool-down, proceeding to start checkNewArticle goroutine.")
+
+		time.Sleep(duration) 
 		go checkNewArticle(bd, boardCh)
 	}
 }
