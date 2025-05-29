@@ -63,8 +63,11 @@ func (u User) Save() error {
 		return ErrAccountEmpty
 	}
 
-	if u.Profile.Email == "" && u.Profile.Line == "" && u.Profile.Messenger == "" && u.Profile.Telegram == "" {
-		return errors.New("one of Email, Line, Messenger and Telegram have to be filled")
+	// If DiscordChannelID is not set, then at least one other contact method must be provided.
+	if u.Profile.DiscordChannelID == "" {
+		if u.Profile.Email == "" && u.Profile.Line == "" && u.Profile.Messenger == "" && u.Profile.Telegram == "" {
+			return errors.New("one of Email, Line, Messenger, Telegram must be filled, or DiscordChannelID must be present")
+		}
 	}
 	u.CreateTime = time.Now()
 	u.UpdateTime = time.Now()
