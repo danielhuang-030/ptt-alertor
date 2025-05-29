@@ -21,15 +21,16 @@ func init() {
 func InitBoardStorage() {
 	driverType := os.Getenv("BOARD_DRIVER_TYPE")
 	if driverType == "" {
-		driverType = "file" // Default to file
-		log.Info("BOARD_DRIVER_TYPE not set, defaulting to 'file'")
+		driverType = "redis" // Default to redis
+		log.Info("BOARD_DRIVER_TYPE not set, defaulting to 'redis'")
 	}
 
 	cacherType := os.Getenv("BOARD_CACHER_TYPE")
 	// Default to "redis" if empty or explicitly "redis"
 	if cacherType == "" || cacherType == "redis" {
 		if os.Getenv("REDIS_HOST_PORT") == "" {
-			log.Warn("BOARD_CACHER_TYPE is 'redis' but REDIS_HOST_PORT is not set. Redis Cacher operations may fail if Redis is not available on default/localhost.")
+			// If Board Driver is also Redis, this Fatal might be triggered first, which is acceptable.
+			log.Fatal("BOARD_CACHER_TYPE is 'redis' but REDIS_HOST_PORT is not set. This is required.")
 		}
 		// Assuming Redis struct implements Cacher and is accessible
 		defaultBoardCacher = new(Redis)
@@ -49,7 +50,7 @@ func InitBoardStorage() {
 		log.Info("Board Driver initialized with: file. Storage path is determined by BOARD_FILE_STORAGE_PATH (if set) or defaults to ./storage/board_articles/ (handled in file.go).")
 	case "redis":
 		if os.Getenv("REDIS_HOST_PORT") == "" {
-			log.Warn("BOARD_DRIVER_TYPE is 'redis' but REDIS_HOST_PORT is not set. Redis Driver operations may fail if Redis is not available on default/localhost.")
+			log.Fatal("BOARD_DRIVER_TYPE is 'redis' (or defaulted to 'redis'), but REDIS_HOST_PORT is not set. This is required.")
 		}
 		// Assuming Redis struct implements Driver and is accessible
 		defaultBoardDriver = new(Redis)
