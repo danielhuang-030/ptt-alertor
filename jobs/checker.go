@@ -24,6 +24,11 @@ var boardCh = make(chan *board.Board, 700)
 var highBoards []*board.Board
 var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
+var (
+	boardProcessingMutex      = &sync.Mutex{}
+	boardsCurrentlyProcessing = make(map[string]bool)
+)
+
 func init() {
 	for _, name := range highBoardNames {
 		bd := models.Board()
@@ -103,7 +108,29 @@ func (c Checker) Run() {
 	go func() {
 		var offPeak bool
 		duration := c.duration
-		for {
+		
+		// Prepare the list of normal boards by excluding highBoards
+		allBoards := models.Board().All()
+		highBoardNameSet := make(map[string]bool)
+		for _, hb := range highBoards {
+			if hb != nil { // Add nil check for safety
+				highBoardNameSet[hb.Name] = true
+			}
+		}
+
+		// Initialize normalBoards as an empty slice of *board.Board
+		normalBoards := make([]*board.Board, 0) 
+		for _, b := range allBoards {
+			if b != nil { // Add nil check for safety
+				if _, isHigh := highBoardNameSet[b.Name]; !isHigh {
+					normalBoards = append(normalBoards, b)
+				}
+			}
+		}
+		// Log the counts after filtering
+		log.Infof("Initialized board checks: %d high-frequency boards, %d normal-frequency boards to be checked by this goroutine.", len(highBoards), len(normalBoards))
+
+		for { // Inner loop starts here
 			select {
 			case <-ctx.Done():
 				for len(offPeakCh) > 0 {
@@ -113,10 +140,11 @@ func (c Checker) Run() {
 			case op := <-offPeakCh:
 				if offPeak != op {
 					if op {
-						log.Info("Switch to Slow Mode")
+						// Corrected log message for clarity
+						log.Info("Switch to Slow Mode for normal boards")
 						duration = c.duration * 2
 					} else {
-						log.Info("Switch to Normal Mode")
+						log.Info("Switch to Normal Mode for normal boards")
 						duration = c.duration
 					}
 					offPeak = op
@@ -190,21 +218,67 @@ func checkBoards(bds []*board.Board, duration time.Duration) {
 }
 
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
-	log.WithFields(log.Fields{"board": bd.Name, "source": "checkNewArticle"}).Debug("Preparing to call bd.WithNewArticles()")
-	bd.WithNewArticles()
-	log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "source": "checkNewArticle"}).Debug("Returned from bd.WithNewArticles()")
-	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
-		bd.Articles = bd.OnlineArticles
-		log.WithField("board", bd.Name).Info("Created Articles")
-		bd.Save()
+	if bd == nil || bd.Name == "" {
+		log.Warn("checkNewArticle received nil board or board with empty name.")
+		return
 	}
-	if len(bd.NewArticles) != 0 {
-		bd.Articles = bd.OnlineArticles
-		log.WithField("board", bd.Name).Info("Updated Articles")
-		if err := bd.Save(); err == nil {
-			log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "action": "sending_to_boardCh"}).Info("Board has new articles, sending to boardCh for processing.")
-			boardCh <- bd
+
+	boardProcessingMutex.Lock()
+	if boardsCurrentlyProcessing[bd.Name] {
+		boardProcessingMutex.Unlock()
+		log.WithField("board", bd.Name).Debug("Board is already being processed by another goroutine, skipping this run.")
+		return
+	}
+	boardsCurrentlyProcessing[bd.Name] = true
+	boardProcessingMutex.Unlock()
+
+	// Defer unlocking in all return paths
+	defer func() {
+		boardProcessingMutex.Lock()
+		delete(boardsCurrentlyProcessing, bd.Name)
+		boardProcessingMutex.Unlock()
+		log.WithField("board", bd.Name).Debug("Finished processing board, lock released.")
+	}()
+
+	log.WithFields(log.Fields{"board": bd.Name, "source": "checkNewArticle"}).Debug("Preparing to call bd.WithNewArticles()")
+	bd.WithNewArticles() // This populates bd.NewArticles and bd.OnlineArticles
+	log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "source": "checkNewArticle"}).Debug("Returned from bd.WithNewArticles()")
+
+	// This logic seems to handle two cases:
+	// 1. Board just added, no saved articles, so OnlineArticles are "created" (but not "new" by comparison)
+	// 2. Board has updates, NewArticles has content.
+	// The original log "Created Articles" might be confusing if it means "newly fetched and saved online articles".
+	// The log "Updated Articles" is for when bd.NewArticles is non-empty.
+
+	// Case 1: No previously saved articles for this board, and online articles were fetched.
+	// These are not "new" by comparison to a previous state, but they are the first fetch.
+	// The original code had `if bd.NewArticles == nil && len(bd.OnlineArticles) > 0`.
+	// `bd.NewArticles` would be nil if `savedArticles` was empty in `newArticles` func.
+	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
+		bd.Articles = bd.OnlineArticles // Set all fetched online articles as the current articles for the board
+		log.WithField("board", bd.Name).Info("Board has no prior saved articles, saving current online articles.")
+		// We should save here, so the next check considers these "saved".
+		if err := bd.Save(); err != nil {
+			log.WithError(err).WithField("board", bd.Name).Error("Failed to save initial articles for board.")
+			// If save fails, we might not want to send to boardCh, or handle differently.
+                // For now, let's keep original logic of not sending to boardCh in this specific sub-case.
 		}
+            // Original code did NOT send to boardCh here.
+            // This implies that first fetchPopulating OnlineArticles but not NewArticles (by comparison)
+            // should not trigger immediate keyword/author checks. This seems reasonable.
+	}
+
+	// Case 2: New articles found by comparison.
+	if len(bd.NewArticles) > 0 {
+		// The board's main article list (for saving) should reflect the latest online state
+		bd.Articles = bd.OnlineArticles 
+		log.WithField("board", bd.Name).Info("Updated Articles (new articles found by comparison).") // Clarified log
+		if err := bd.Save(); err == nil { // Save the new state (all online articles)
+			log.WithFields(log.Fields{"board": bd.Name, "newArticlesCount": len(bd.NewArticles), "action": "sending_to_boardCh"}).Info("Board has new articles, sending to boardCh for processing.")
+			boardCh <- bd // Send the board (which includes NewArticles) for further checks
+		} else {
+                log.WithError(err).WithField("board", bd.Name).Error("Failed to save board after finding new articles.")
+            }
 	}
 }
 
