@@ -7,3 +7,4 @@
    logo.jpg
    public/assets/images/*
 
+storage/redis/*
