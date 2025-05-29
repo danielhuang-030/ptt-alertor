@@ -95,6 +95,20 @@ func (c Checker) Run() {
 				return
 			default:
 				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards")
+				log.Debug("--- High Priority Boards Details ---")
+				for i, bd := range highBoards {
+					originalName := bd.Name // Assuming bd.Name is already standardized as per previous attempt
+					standardizedName := strings.ToLower(strings.TrimSpace(originalName)) // Re-standardize for absolute certainty in log
+					log.WithFields(log.Fields{
+						"index":             i,
+						"board_name_as_is":  originalName,
+						"board_name_q":      fmt.Sprintf("%q", originalName),
+						"standardized_name": standardizedName,
+						"standardized_name_q": fmt.Sprintf("%q", standardizedName),
+						"board_ptr":         fmt.Sprintf("%p", bd),
+					}).Debug("High priority board detail")
+				}
+				log.Debug("--- End of High Priority Boards Details ---")
 				checkBoards(highBoards, checkHighBoardDuration, nil) // No skipNames for high priority
 			}
 		}
@@ -113,6 +127,20 @@ func (c Checker) Run() {
 		for _, bd := range highBoards { // highBoards[*].Name is already standardized
 			highBoardNamesSet[bd.Name] = struct{}{}
 		}
+		log.Debug("--- High Priority Board Names Set (for skipping) ---")
+		i := 0
+		for name := range highBoardNamesSet {
+			log.WithFields(log.Fields{
+				"index": i,
+				"name_in_set_as_is": name,
+				"name_in_set_q":     fmt.Sprintf("%q", name),
+			}).Debug("Name in highBoardNamesSet")
+			i++
+		}
+		if i == 0 {
+			log.Debug("highBoardNamesSet is EMPTY")
+		}
+		log.Debug("--- End of High Priority Board Names Set ---")
 
 		for {
 			select {
@@ -135,6 +163,20 @@ func (c Checker) Run() {
 			default:
 				allNormalBoards := models.Board().All() // Board.All() now returns standardized names
 				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards")
+				log.Debug("--- Normal Boards List Details (before passing to checkBoards) ---")
+				for i, bd := range allNormalBoards {
+					originalName := bd.Name // Assuming bd.Name is already standardized by Board.All()
+					standardizedName := strings.ToLower(strings.TrimSpace(originalName)) // Re-standardize for log
+					log.WithFields(log.Fields{
+						"index":             i,
+						"board_name_as_is":  originalName,
+						"board_name_q":      fmt.Sprintf("%q", originalName),
+						"standardized_name": standardizedName,
+						"standardized_name_q": fmt.Sprintf("%q", standardizedName),
+						"board_ptr":         fmt.Sprintf("%p", bd),
+					}).Debug("Normal board detail (from models.Board().All())")
+				}
+				log.Debug("--- End of Normal Boards List Details ---")
 				checkBoards(allNormalBoards, duration, highBoardNamesSet)
 			}
 		}
@@ -187,12 +229,48 @@ func (c Checker) Stop() {
 }
 
 func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
-	log.WithField("boards_to_check_count", len(bds)).Debug("checkBoards received boards")
+	log.WithField("num_boards_received", len(bds)).Debug("checkBoards BEGIN")
+	if skipNames != nil {
+		log.Debug("--- skipNames Map Content (received by checkBoards) ---")
+		i := 0
+		for name := range skipNames {
+			log.WithFields(log.Fields{
+				"index": i,
+				"name_in_skipmap_as_is": name,
+				"name_in_skipmap_q":     fmt.Sprintf("%q", name),
+			}).Debug("Name in skipNames map")
+			i++
+		}
+		if i == 0 {
+			log.Debug("skipNames map is EMPTY")
+		}
+		log.Debug("--- End of skipNames Map Content ---")
+	} else {
+		log.Debug("skipNames map is NIL")
+	}
+
 	for _, bd := range bds {
+		originalNameLoop := bd.Name // Assuming bd.Name is already standardized
+		standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for log
+		log.WithFields(log.Fields{
+			"board_name_as_is":  originalNameLoop,
+			"board_name_q":      fmt.Sprintf("%q", originalNameLoop),
+			"standardized_name": standardizedNameLoop, // This is what should be used for lookup
+			"standardized_name_q": fmt.Sprintf("%q", standardizedNameLoop),
+			"board_ptr":         fmt.Sprintf("%p", bd),
+		}).Debug("Board in checkBoards loop (before skip check)")
+
 		// bd.Name is assumed to be standardized (lowercase, trimmed) by its creator (Board.All() or init())
 		if skipNames != nil {
-			if _, shouldSkip := skipNames[bd.Name]; shouldSkip {
-				log.WithField("board", bd.Name).Debug("Skipping board as it's in skipNames (e.g., high priority or already processed).")
+			// standardizedNameLoop is the name we should check in skipNames
+			_, shouldSkip := skipNames[standardizedNameLoop] // Use the definitely standardized name for lookup
+			log.WithFields(log.Fields{
+				"board_name_checked": standardizedNameLoop,
+				"board_name_checked_q": fmt.Sprintf("%q", standardizedNameLoop),
+				"found_in_skipNames": shouldSkip,
+			}).Debug("skipNames check result")
+			if shouldSkip {
+				log.WithField("board", standardizedNameLoop).Debug("Skipping board as it was found in skipNames.") // Original log
 				continue
 			}
 		}
