@@ -26,8 +26,12 @@ var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
 func init() {
 	for _, name := range highBoardNames {
+		standardizedName := strings.ToLower(strings.TrimSpace(name))
+		// Ensure highBoardNames itself stores standardized names if used elsewhere,
+		// though typically direct use of highBoards (which will have standardized names) is more common.
+		// For this change, we focus on standardizing names in highBoards[*].Name
 		bd := models.Board()
-		bd.Name = name
+		bd.Name = standardizedName
 		highBoards = append(highBoards, bd)
 	}
 }
@@ -91,7 +95,7 @@ func (c Checker) Run() {
 				return
 			default:
 				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards")
-				checkBoards(highBoards, checkHighBoardDuration)
+				checkBoards(highBoards, checkHighBoardDuration, nil) // No skipNames for high priority
 			}
 		}
 	}()
@@ -104,6 +108,12 @@ func (c Checker) Run() {
 	go func() {
 		var offPeak bool
 		duration := c.duration
+		// Create set of high priority board names to skip them in normal processing
+		highBoardNamesSet := make(map[string]struct{})
+		for _, bd := range highBoards { // highBoards[*].Name is already standardized
+			highBoardNamesSet[bd.Name] = struct{}{}
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -123,9 +133,9 @@ func (c Checker) Run() {
 					offPeak = op
 				}
 			default:
-				allBoards := models.Board().All()
-				log.WithField("normal_boards_count", len(allBoards)).Debug("Processing normal boards")
-				checkBoards(allBoards, duration)
+				allNormalBoards := models.Board().All() // Board.All() now returns standardized names
+				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards")
+				checkBoards(allNormalBoards, duration, highBoardNamesSet)
 			}
 		}
 	}()
@@ -176,9 +186,16 @@ func (c Checker) Stop() {
 	log.Info("Checker Stop")
 }
 
-func checkBoards(bds []*board.Board, duration time.Duration) {
+func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
 	log.WithField("boards_to_check_count", len(bds)).Debug("checkBoards received boards")
 	for _, bd := range bds {
+		// bd.Name is assumed to be standardized (lowercase, trimmed) by its creator (Board.All() or init())
+		if skipNames != nil {
+			if _, shouldSkip := skipNames[bd.Name]; shouldSkip {
+				log.WithField("board", bd.Name).Debug("Skipping board as it's in skipNames (e.g., high priority or already processed).")
+				continue
+			}
+		}
 		log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Starting checkNewArticle goroutine")
 		time.Sleep(duration)
 		go checkNewArticle(bd, boardCh)
@@ -223,29 +240,32 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
 	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkKeywordSubscription BEGIN")
 	for _, sub := range user.Subscribes {
-		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "sub_board": sub.Board, "sub_keywords": strings.Join(sub.Keywords, ",")}).Debug("Checking subscription rule")
-		if bd.Name == sub.Board {
-			cker.board = sub.Board
+		standardizedSubBoard := strings.ToLower(strings.TrimSpace(sub.Board))
+		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_keywords": strings.Join(sub.Keywords, ",")}).Debug("Checking subscription rule")
+		if bd.Name == standardizedSubBoard { // bd.Name is already standardized
+			cker.board = bd.Name // Use standardized board name
 			for _, keyword := range sub.Keywords {
-				go checkKeyword(keyword, bd, cker)
+				standardizedKeyword := strings.ToLower(strings.TrimSpace(keyword))
+				go checkKeyword(standardizedKeyword, bd, cker)
 			}
 		}
 	}
 }
 
-func checkKeyword(keyword string, bd *board.Board, cker Checker) {
+func checkKeyword(standardizedKeyword string, bd *board.Board, cker Checker) {
 	keywordArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if newAtcl.MatchKeyword(keyword) {
+		// Assuming newAtcl.MatchKeyword can handle or expects a standardized (e.g., lowercase) keyword
+		if newAtcl.MatchKeyword(standardizedKeyword) {
 			newAtcl.Author = ""
 			keywordArticles = append(keywordArticles, newAtcl)
 		}
 	}
 	if len(keywordArticles) != 0 {
-		cker.keyword = keyword
+		cker.keyword = standardizedKeyword // Store standardized keyword
 		cker.articles = keywordArticles
 		cker.subType = "keyword"
-		cker.word = keyword
+		cker.word = standardizedKeyword // Store standardized word
 		log.WithFields(log.Fields{"board": cker.board, "keyword": cker.keyword, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkKeyword")
 		cker.ch <- cker
 	}
@@ -270,28 +290,31 @@ func checkAuthorSubscriber(bd *board.Board, cker Checker) {
 func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
 	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkAuthorSubscription BEGIN")
 	for _, sub := range user.Subscribes {
-		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "sub_board": sub.Board, "sub_authors": strings.Join(sub.Authors, ",")}).Debug("Checking subscription rule")
-		if bd.Name == sub.Board {
-			cker.board = sub.Board
+		standardizedSubBoard := strings.ToLower(strings.TrimSpace(sub.Board))
+		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_authors": strings.Join(sub.Authors, ",")}).Debug("Checking subscription rule")
+		if bd.Name == standardizedSubBoard { // bd.Name is already standardized
+			cker.board = bd.Name // Use standardized board name
 			for _, author := range sub.Authors {
-				go checkAuthor(author, bd, cker)
+				standardizedAuthor := strings.ToLower(strings.TrimSpace(author))
+				go checkAuthor(standardizedAuthor, bd, cker)
 			}
 		}
 	}
 }
 
-func checkAuthor(author string, bd *board.Board, cker Checker) {
+func checkAuthor(standardizedAuthor string, bd *board.Board, cker Checker) {
 	authorArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if strings.EqualFold(newAtcl.Author, author) {
+		// strings.EqualFold is already case-insensitive. Passing standardizedAuthor maintains consistency.
+		if strings.EqualFold(newAtcl.Author, standardizedAuthor) {
 			authorArticles = append(authorArticles, newAtcl)
 		}
 	}
 	if len(authorArticles) != 0 {
-		cker.author = author
+		cker.author = standardizedAuthor // Store standardized author
 		cker.articles = authorArticles
 		cker.subType = "author"
-		cker.word = author
+		cker.word = standardizedAuthor // Store standardized word
 		log.WithFields(log.Fields{"board": cker.board, "author": cker.author, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkAuthor")
 		cker.ch <- cker
 	}
