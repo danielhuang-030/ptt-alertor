@@ -3,6 +3,7 @@ package board
 import (
 	"math"
 	"strings"
+	"sync"
 
 	log "github.com/Ptt-Alertor/logrus"
 	"github.com/Ptt-Alertor/ptt-alertor/models/article"
@@ -39,6 +40,7 @@ type Board struct {
 	NewArticles    article.Articles
 	driver         Driver
 	cacher         Cacher
+	mu             sync.Mutex
 }
 
 func NewBoard(drive Driver, cache Cacher) *Board {
@@ -74,11 +76,15 @@ func (bd Board) Create() error {
 	return bd.cacher.Create(bd.Name)
 }
 
-func (bd Board) Save() error {
+func (bd *Board) Save() error {
+	bd.mu.Lock()
+	defer bd.mu.Unlock()
 	return bd.driver.Save(bd.Name, bd.Articles)
 }
 
-func (bd Board) Delete() error {
+func (bd *Board) Delete() error {
+	bd.mu.Lock()
+	defer bd.mu.Unlock()
 	if err := bd.driver.Delete(bd.Name); err != nil {
 		return err
 	}
@@ -94,6 +100,8 @@ func (bd *Board) WithArticles() {
 }
 
 func (bd *Board) WithNewArticles() {
+	bd.mu.Lock()
+	defer bd.mu.Unlock()
 	bd.NewArticles, bd.OnlineArticles = newArticles(*bd)
 }
 
