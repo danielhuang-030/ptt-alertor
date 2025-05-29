@@ -10,7 +10,6 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/channels/messenger"
 	"github.com/Ptt-Alertor/ptt-alertor/channels/telegram"
 	"github.com/Ptt-Alertor/ptt-alertor/models/counter"
-	"github.com/Ptt-Alertor/ptt-alertor/myutil" // Added import for ParseDiscordInternalID
 )
 
 const workers = 300
@@ -65,14 +64,7 @@ func sendMessage(c check) {
 			"type":                      cr.subType,
 			"word":                      cr.word,
 			"notificationTargetChannelID": cr.Profile.DiscordChannelID, // Explicitly log the channel being sent to
-		}
-		parsedUserID, parsedChannelIDFromAccount, parseErr := myutil.ParseDiscordInternalID(account)
-		if parseErr == nil {
-			attemptLogFields["internalAccountID"] = account
-			attemptLogFields["discordUserID"] = parsedUserID
-			attemptLogFields["channelIDFromAccount"] = parsedChannelIDFromAccount
-		} else {
-			attemptLogFields["account"] = account // Fallback to original account if not internal ID format
+			"account":                   account, // Account is now the channelID
 		}
 		log.WithFields(attemptLogFields).Info("Attempting to send Discord notification via Bot")
 
@@ -145,13 +137,7 @@ func sendMessage(c check) {
 				"type":                      cr.subType,
 				"word":                      cr.word,
 				"notificationTargetChannelID": cr.Profile.DiscordChannelID,
-			}
-			if parseErr == nil { // Use result from above parsing
-				failureLogFields["internalAccountID"] = account
-				failureLogFields["discordUserID"] = parsedUserID
-				failureLogFields["channelIDFromAccount"] = parsedChannelIDFromAccount
-			} else {
-				failureLogFields["account"] = account
+				"account":                   account, // Account is now the channelID
 			}
 			log.WithError(err).WithFields(failureLogFields).Warn("Failed to send Discord notification via Bot")
 		}
