@@ -26,7 +26,16 @@ func init() {
 func messageWorker(ckCh chan check) {
 	for {
 		ck := <-ckCh
-		sendMessage(ck)
+		cr := ck.Self() // Get Checker instance early for logging
+		log.WithFields(log.Fields{
+			"board":           cr.board,
+			"type":            cr.subType,
+			"word":            cr.word,
+			"articles_count":  len(cr.articles),
+			"profile_account": cr.Profile.Account,
+			"discord_ch_id":   cr.Profile.DiscordChannelID,
+		}).Info("Message worker received Checker from ckCh")
+		sendMessage(ck) // Pass original 'ck'
 	}
 }
 
@@ -49,6 +58,14 @@ func containsString(slice []string, str string) bool {
 
 func sendMessage(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{
+		"account":           cr.Profile.Account,
+		"board":             cr.board,
+		"type":              cr.subType,
+		"word":              cr.word,
+		"articles_count":    len(cr.articles),
+		"target_discord_ch": cr.Profile.DiscordChannelID,
+	}).Info("sendMessage BEGIN")
 	account := cr.Profile.Account
 
 	finalSentPlatforms := []string{} // 記錄最終成功發送的平台
@@ -128,6 +145,12 @@ func sendMessage(c check) {
 		    // else messageContent remains "您有新的 PTT 通知！"
 		}
 
+		// Added Debug log before PushMessage
+		if embed != nil {
+			log.WithFields(log.Fields{"target_discord_ch": cr.Profile.DiscordChannelID, "message_summary": messageContent[:myutil.Min(len(messageContent), 50)], "embed_title": embed.Title}).Debug("Details before calling discord.PushMessage")
+		} else {
+			log.WithFields(log.Fields{"target_discord_ch": cr.Profile.DiscordChannelID, "message_summary": messageContent[:myutil.Min(len(messageContent), 50)]}).Debug("Details before calling discord.PushMessage (no embed)")
+		}
 
 		err := discord.PushMessage(cr.Profile.DiscordChannelID, messageContent, embed)
 		if err == nil {
@@ -218,6 +241,7 @@ func sendMessage(c check) {
 
 func sendMail(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{"platform": "mail", "account": cr.Profile.Account, "target": cr.Profile.Email, "board": cr.board, "word": cr.word}).Debug("Attempting to send Mail")
 	m := new(mail.Mail)
 	m.Title.BoardName = cr.board
 	m.Title.Keyword = cr.keyword
@@ -228,21 +252,25 @@ func sendMail(c check) {
 
 func sendLine(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{"platform": "line_legacy", "account": cr.Profile.Account, "target": cr.Profile.Line, "board": cr.board, "word": cr.word}).Debug("Attempting to send Line (Legacy)")
 	line.PushTextMessage(cr.Profile.Line, c.String())
 }
 
 func sendLineNotify(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{"platform": "line_notify", "account": cr.Profile.Account, "target": "Line Token Present", "board": cr.board, "word": cr.word}).Debug("Attempting to send Line Notify")
 	line.Notify(cr.Profile.LineAccessToken, c.String())
 }
 
 func sendMessenger(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{"platform": "messenger", "account": cr.Profile.Account, "target": cr.Profile.Messenger, "board": cr.board, "word": cr.word}).Debug("Attempting to send Messenger")
 	m := messenger.New()
 	m.SendTextMessage(cr.Profile.Messenger, c.String())
 }
 
 func sendTelegram(c check) {
 	cr := c.Self()
+	log.WithFields(log.Fields{"platform": "telegram", "account": cr.Profile.Account, "target": cr.Profile.TelegramChat, "board": cr.board, "word": cr.word}).Debug("Attempting to send Telegram")
 	telegram.SendTextMessage(cr.Profile.TelegramChat, c.String())
 }

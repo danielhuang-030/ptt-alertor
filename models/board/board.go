@@ -3,7 +3,6 @@ package board
 import (
 	"math"
 	"strings"
-	"sync"
 
 	log "github.com/Ptt-Alertor/logrus"
 	"github.com/Ptt-Alertor/ptt-alertor/models/article"
@@ -40,7 +39,6 @@ type Board struct {
 	NewArticles    article.Articles
 	driver         Driver
 	cacher         Cacher
-	mu             sync.Mutex
 }
 
 func NewBoard(drive Driver, cache Cacher) *Board {
@@ -60,10 +58,10 @@ func (bd Board) Exist() bool {
 
 func (bd Board) All() (bds []*Board) {
 	boards := bd.List()
-	for _, boardName := range boards {
-		newBd := NewBoard(bd.driver, bd.cacher)
-		newBd.Name = strings.ToLower(boardName)
-		bds = append(bds, newBd)
+	for _, board := range boards {
+		bd := NewBoard(bd.driver, bd.cacher)
+		bd.Name = board
+		bds = append(bds, bd)
 	}
 	return bds
 }
@@ -76,15 +74,11 @@ func (bd Board) Create() error {
 	return bd.cacher.Create(bd.Name)
 }
 
-func (bd *Board) Save() error {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
+func (bd Board) Save() error {
 	return bd.driver.Save(bd.Name, bd.Articles)
 }
 
-func (bd *Board) Delete() error {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
+func (bd Board) Delete() error {
 	if err := bd.driver.Delete(bd.Name); err != nil {
 		return err
 	}
@@ -100,8 +94,6 @@ func (bd *Board) WithArticles() {
 }
 
 func (bd *Board) WithNewArticles() {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
 	bd.NewArticles, bd.OnlineArticles = newArticles(*bd)
 }
 
