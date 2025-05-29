@@ -28,9 +28,9 @@ func InitBoardStorage() {
 	cacherType := os.Getenv("BOARD_CACHER_TYPE")
 	// Default to "redis" if empty or explicitly "redis"
 	if cacherType == "" || cacherType == "redis" {
-		if os.Getenv("REDIS_HOST_PORT") == "" {
+		if os.Getenv("REDIS_PORT") == "" {
 			// If Board Driver is also Redis, this Fatal might be triggered first, which is acceptable.
-			log.Fatal("BOARD_CACHER_TYPE is 'redis' but REDIS_HOST_PORT is not set. This is required.")
+			log.Fatal("BOARD_CACHER_TYPE is 'redis' but REDIS_PORT is not set. This is required.")
 		}
 		// Assuming Redis struct implements Cacher and is accessible
 		defaultBoardCacher = new(Redis)
