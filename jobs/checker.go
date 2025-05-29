@@ -1,7 +1,21 @@
 package jobs
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
 	"sync"
+	"time"
+
+	log "github.com/Ptt-Alertor/logrus"
+
+	"github.com/Ptt-Alertor/ptt-alertor/models"
+	"github.com/Ptt-Alertor/ptt-alertor/models/article"
+	"github.com/Ptt-Alertor/ptt-alertor/models/author"
+	"github.com/Ptt-Alertor/ptt-alertor/models/board"
+	"github.com/Ptt-Alertor/ptt-alertor/models/keyword"
+	"github.com/Ptt-Alertor/ptt-alertor/models/user"
 )
 
 const checkHighBoardDuration = 1 * time.Second
@@ -159,13 +173,13 @@ func (c Checker) Stop() {
 	log.Info("Checker Stop")
 }
 
-var (
-	boardProcessingMutex      = &sync.Mutex{}
-	boardsCurrentlyProcessing = make(map[string]bool)
-)
+func checkBoards(bds []*board.Board, duration time.Duration) {
+	for _, bd := range bds {
+		time.Sleep(duration)
+		go checkNewArticle(bd, boardCh)
+	}
+}
 
-// checkNewArticle provides thread-safe board processing
-// The full implementation is in check.go - this just adds the mutex wrapper
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
 	bd.WithNewArticles()
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
@@ -194,14 +208,16 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 	}
 }
 
-	// Acquire lock to prevent concurrent processing of same board
-	boardProcessingMutex.Lock()
-	if boardsCurrentlyProcessing[bd.Name] {
-		boardProcessingMutex.Unlock()
-		return
+func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
+	for _, sub := range user.Subscribes {
+		if bd.Name == sub.Board {
+			cker.board = sub.Board
+			for _, keyword := range sub.Keywords {
+				go checkKeyword(keyword, bd, cker)
+			}
+		}
 	}
-	boardsCurrentlyProcessing[bd.Name] = true
-	boardProcessingMutex.Unlock()
+}
 
 func checkKeyword(keyword string, bd *board.Board, cker Checker) {
 	keywordArticles := make(article.Articles, 0)
