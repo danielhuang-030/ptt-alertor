@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"os"
 
+	"strings" // Added import
+
 	log "github.com/Ptt-Alertor/logrus"
-	"github.com/bwmarrin/discordgo"
 	"github.com/Ptt-Alertor/ptt-alertor/command"
+	"github.com/Ptt-Alertor/ptt-alertor/myutil" // Added import
+	"github.com/bwmarrin/discordgo"
 )
 
 var (
@@ -73,7 +76,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	guildID := m.GuildID
 	channelID := m.ChannelID
-	authorID := m.Author.ID
+	authorID := m.Author.ID // Original Discord User ID
 
 	log.WithFields(log.Fields{
 		"guildID":   guildID,
@@ -82,50 +85,72 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		"message":   m.Content,
 	}).Debug("Discord message received")
 
-	// For now, only respond to commands in the default channel.
-	if channelID == defaultChannelID {
-		// Ensure user continuity for Discord interactions
-		err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.Author.ID)
+	var actualCommand string
+	botMentioned := false
+
+	// 檢查 Bot 是否在訊息的提及列表中
+	for _, mentionedUser := range m.Mentions {
+		if mentionedUser.ID == s.State.User.ID {
+			botMentioned = true
+			break
+		}
+	}
+
+	if !botMentioned {
+		return // 如果 Bot 沒有被提及，則忽略此訊息
+	}
+
+	// 解析指令：移除 Bot 的提及部分，並去除前後空白
+	botMentionString := "<@" + s.State.User.ID + ">"
+	botMentionStringWithNick := "<@!" + s.State.User.ID + ">"
+
+	if strings.HasPrefix(m.Content, botMentionStringWithNick) {
+		actualCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionStringWithNick, "", 1))
+	} else if strings.HasPrefix(m.Content, botMentionString) {
+		actualCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionString, "", 1))
+	} else {
+		log.Warnf("Bot was mentioned by %s in channel %s, but command format was not recognized: %s", m.Author.Username, m.ChannelID, m.Content)
+		return
+	}
+
+	if actualCommand == "" {
+		// Optionally send help message or just return
+		// s.ChannelMessageSend(m.ChannelID, "您好！請在提及我之後輸入指令，例如 `@PttAlertor 指令`")
+		return
+	}
+
+	// Ensure user continuity for Discord interactions using the original Discord User ID
+	err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, authorID)
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"originalUserID": authorID,
+			"channelID":      m.ChannelID,
+			"guildID":        m.GuildID,
+		}).Error("Failed to ensure Discord user continuity in messageCreate")
+		// Decide if this error is critical enough to stop further processing.
+		// For now, log and continue to attempt command handling.
+	} else {
+		log.WithFields(log.Fields{
+			"originalUserID": authorID,
+			"channelID":      m.ChannelID,
+			"guildID":        m.GuildID,
+		}).Info("Discord user continuity ensured in messageCreate")
+	}
+
+	// Create the internal account ID for command handling
+	internalAccountID := myutil.CreateDiscordInternalID(authorID, m.ChannelID)
+
+	// Call HandleCommand to process the extracted actualCommand with the internalAccountID.
+	responseText := command.HandleCommand(actualCommand, internalAccountID, true)
+
+	if responseText != "" {
+		_, err := s.ChannelMessageSend(m.ChannelID, responseText) // Send response back to the original channel
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{
-				"userID":    m.Author.ID,
-				"channelID": m.ChannelID,
-				"guildID":   m.GuildID,
-			}).Error("Failed to ensure Discord user continuity in messageCreate")
-			// 決定是否要因為此錯誤而提前返回。取決於 HandleDiscordFollow 失敗的嚴重性。
-			// 為了保持指令處理的嘗試，這裡可以只記錄錯誤，不提前返回。
-			// 如果 HandleDiscordFollow 內部邏輯已確保帳號存在或建立，那麼這裡的錯誤可能不致命。
-		} else {
-			log.WithFields(log.Fields{
-				"userID":    m.Author.ID,
-				"channelID": m.ChannelID,
-				"guildID":   m.GuildID,
-			}).Info("Discord user continuity ensured in messageCreate")
+				"channelID":         m.ChannelID,
+				"internalAccountID": internalAccountID,
+			}).Error("Failed to send Discord message response")
 		}
-
-		// Call HandleCommand to process the message content.
-		// Assuming HandleCommand is designed to be called with isUser=true for actual user commands.
-		responseText := command.HandleCommand(m.Content, authorID, true)
-
-		if responseText != "" {
-			_, err := s.ChannelMessageSend(channelID, responseText)
-			if err != nil {
-				log.WithError(err).WithFields(log.Fields{
-					"channelID": channelID,
-					"authorID":  authorID,
-				}).Error("Failed to send Discord message response")
-			}
-		}
-	} else {
-		// Optional: Log if message received outside default channel, or send a polite notice.
-		// For now, we do nothing if it's not the default channel.
-		log.WithFields(log.Fields{
-			"guildID":            guildID,
-			"channelID":          channelID,
-			"authorID":           authorID,
-			"defaultChannelID":   defaultChannelID,
-			"message":            m.Content,
-		}).Debug("Ignoring message: not in default command channel.")
 	}
 }
 
