@@ -50,14 +50,14 @@ func containsString(slice []string, str string) bool {
 func sendMessage(c check) {
 	cr := c.Self()
 	account := cr.Profile.Account
-	
+
 	finalSentPlatforms := []string{} // 記錄最終成功發送的平台
 
 	discordAttempted := false
 	discordSentSuccessfully := false
 	if cr.Profile.DiscordChannelID != "" {
 		discordAttempted = true
-		
+
 		// Prepare base log fields for Discord notification attempt
 		attemptLogFields := log.Fields{
 			"platform":                  "discord_bot",
@@ -100,7 +100,7 @@ func sendMessage(c check) {
 		if embed != nil && len(cr.articles) == 1 { // 如果只有一篇文章，主訊息可以更具體
 			messageContent = cr.board + " 板有新文章符合您的訂閱：" + cr.articles[0].Title
 		}
-		
+
 		// Discord 訊息長度限制為 2000 characters for content, Embeds also have limits.
 		// c.String() can be very long. If embed is the primary way to show info, keep messageContent concise.
 		if len(messageContent) > 2000 {
