@@ -24,16 +24,7 @@ var boardCh = make(chan *board.Board, 700)
 var highBoards []*board.Board
 var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
-var (
-	// processingBoardTimes stores the last time a board check was initiated.
-	// Key: standardized board name (string)
-	// Value: time.Time when processing started
-	processingBoardTimes = make(map[string]time.Time)
-	// processingBoardMutex protects access to processingBoardTimes
-	processingBoardMutex = &sync.Mutex{}
-	// coolDownDuration defines how long a board should "cool down" before being processed again.
-	coolDownDuration = 3 * time.Minute // Default 3 minutes cool-down
-)
+// Old cool-down globals removed
 
 func init() {
 	for _, name := range highBoardNames {
@@ -293,31 +284,13 @@ func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[strin
 			}
 		}
 
-		// --- Cool-down Logic ---
-		processingBoardMutex.Lock() // Lock for accessing processingBoardTimes
-		lastProcessedTime, found := processingBoardTimes[bd.Name] // bd.Name is standardized
-		currentTime := time.Now()
-
-		if found && currentTime.Sub(lastProcessedTime) < coolDownDuration {
-			// Still in cool-down period
-			log.WithFields(log.Fields{
-				"board_name": bd.Name,
-				"last_processed": lastProcessedTime.Format(time.RFC3339),
-				"cool_down_duration": coolDownDuration.String(),
-				"time_since_last": currentTime.Sub(lastProcessedTime).String(),
-			}).Debug("Board is in cool-down period, skipping checkNewArticle.")
-			processingBoardMutex.Unlock() // Unlock before continue
-			continue 
-		}
-		// Not in cool-down, or cool-down expired, or never processed. Update time.
-		processingBoardTimes[bd.Name] = currentTime
-		processingBoardMutex.Unlock() // Unlock after update
+		// --- Old Cool-down Logic Removed ---
 
 		log.WithFields(log.Fields{ 
 			"board_name": bd.Name, 
 			"board_ptr": fmt.Sprintf("%p", bd),
-			"last_processed_update_to": currentTime.Format(time.RFC3339),
-		}).Debug("Board not in cool-down, proceeding to start checkNewArticle goroutine.")
+			// "last_processed_update_to" field is removed as it was part of old cool-down
+		}).Debug("Board passed skipName check (and old cool-down removed), proceeding to start checkNewArticle goroutine.")
 
 		time.Sleep(duration) 
 		go checkNewArticle(bd, boardCh)
