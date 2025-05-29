@@ -29,13 +29,10 @@ services:
     ports:
       - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
-      - redis-data:/data # 持久化 Redis 資料
+      - ./storage/redis:/data
     networks:
       - pttalertor-network
 
-volumes:
-  redis-data: # 定義 Redis 資料卷
-
 networks:
-  pttalertor-network: # 自訂橋接網路
+  pttalertor-network:
     driver: bridge
