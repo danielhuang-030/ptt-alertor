@@ -49,8 +49,8 @@ func InitBoardStorage() {
 		// The log message in file.go's init() will confirm the path used.
 		log.Info("Board Driver initialized with: file. Storage path is determined by BOARD_FILE_STORAGE_PATH (if set) or defaults to ./storage/board_articles/ (handled in file.go).")
 	case "redis":
-		if os.Getenv("REDIS_HOST_PORT") == "" {
-			log.Fatal("BOARD_DRIVER_TYPE is 'redis' (or defaulted to 'redis'), but REDIS_HOST_PORT is not set. This is required.")
+		if os.Getenv("REDIS_PORT") == "" {
+			log.Fatal("BOARD_DRIVER_TYPE is 'redis' (or defaulted to 'redis'), but REDIS_PORT is not set. This is required.")
 		}
 		// Assuming Redis struct implements Driver and is accessible
 		defaultBoardDriver = new(Redis)
