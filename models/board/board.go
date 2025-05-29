@@ -60,10 +60,10 @@ func (bd Board) Exist() bool {
 
 func (bd Board) All() (bds []*Board) {
 	boards := bd.List()
-	for _, board := range boards {
-		bd := NewBoard(bd.driver, bd.cacher)
-		bd.Name = board
-		bds = append(bds, bd)
+	for _, boardName := range boards {
+		newBd := NewBoard(bd.driver, bd.cacher)
+		newBd.Name = strings.ToLower(boardName)
+		bds = append(bds, newBd)
 	}
 	return bds
 }
