@@ -22,6 +22,7 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/models/user"
 )
 
+const discordAccountPrefix = "discord_channel:"
 const subArticlesLimit int = 50
 const updateFailedMsg string = "失敗，請嘗試封鎖再解封鎖，並重新執行註冊步驟。\n若問題未解決，請至粉絲團或 LINE 首頁留言。"
 
@@ -38,8 +39,6 @@ var Commands = map[string]map[string]string{
 		"指令": "可使用的指令清單",
 		"清單": "設定的看板、關鍵字、作者",
 		"排行": "前五名追蹤的關鍵字、作者",
-		"listen (或 監聽)": "啟用 PTT Alertor 於目前頻道",
-		"unlisten (或 取消監聽)": "停用 PTT Alertor 於目前頻道",
 	},
 	"關鍵字相關": {
 		"新增 看板 關鍵字": "新增追蹤關鍵字",
@@ -75,6 +74,52 @@ var commandActionMap = map[string]updateAction{
 	"刪除推文":  removeArticles,
 	"新增推文數": updatePushUp,
 	"新增噓文數": updatePushDown,
+}
+
+// IsKnownCommand checks if the given text is a known command keyword.
+func IsKnownCommand(text string) bool {
+    fields := strings.Fields(strings.TrimSpace(text))
+    if len(fields) == 0 {
+        return false
+    }
+    commandKeyword := strings.ToLower(fields[0])
+    if commandKeyword == "" {
+        return false
+    }
+
+    // Check against general command keys (e.g., "指令", "清單")
+    // Note: Commands["一般"] stores definitions like "指令": "可使用的指令清單"
+    // So, commandKeyword should be checked against the *keys* of Commands["一般"]
+    if _, exists := Commands["一般"][commandKeyword]; exists {
+        return true
+    }
+    
+    // Check against aliases that might not be direct keys in Commands["一般"]
+    // but are handled in HandleCommand's switch cases for general commands.
+    switch commandKeyword {
+    case "list", "help": // "listen", "unlisten" are special, handled by mention
+        return true
+    }
+
+    // Check against commandActionMap keys (e.g., "新增", "刪除")
+    if _, exists := commandActionMap[commandKeyword]; exists {
+        return true
+    }
+
+    // Check against the first word of multi-word command definitions in *all* categories
+    // This helps identify commands like "新增作者" if user types just "新增作者"
+    for categoryName, categoryCommands := range Commands {
+        if categoryName == "一般" { // Already checked Commands["一般"] keys more directly
+            continue
+        }
+        for cmdDefinition := range categoryCommands { // cmdDefinition is like "新增 看板 關鍵字"
+            cmdParts := strings.Fields(cmdDefinition) 
+            if len(cmdParts) > 0 && strings.ToLower(cmdParts[0]) == commandKeyword {
+                return true
+            }
+        }
+    }
+    return false
 }
 
 // HandleCommand handles command from chatbot
@@ -175,51 +220,11 @@ func HandleCommand(text string, userID string, isUser bool) string {
 		return handleCommentList(userID)
 	case "add", "del":
 		return handleCommandLine(userID, command, text)
-	case "listen", "監聽":
-		return handleListen(userID) // userID is actually channelID here
-	case "unlisten", "取消監聽":
-		return handleUnlisten(userID) // userID is actually channelID here
 	}
 	if !isUser {
 		return ""
 	}
 	return "無此指令，請打「指令」查看指令清單"
-}
-
-// handleListen enables PTT Alertor service for the given channelID.
-func handleListen(channelID string) string {
-	u := models.User().Find(channelID)
-	// If u.Profile.Account is empty, it implies the user (channel) was not found or is not properly initialized.
-	// For Discord, HandleDiscordFollow should have already created/updated the user.
-	// So, an empty Account here means something went wrong, or the initial follow hasn't happened.
-	if u.Profile.Account == "" {
-		// This message assumes that a follow/setup command should have been issued first if the account is new.
-		// Or, it implies that an operation was attempted on a channelID not yet registered.
-		return "啟用服務失敗，無法識別頻道帳號。請嘗試再次發送指令。"
-	}
-	u.Enable = true
-	if err := u.Update(); err != nil {
-		log.WithError(err).WithField("channelID", channelID).Error("Enable service failed in handleListen")
-		return "啟用服務失敗，請稍後再試或聯繫開發者。"
-	}
-	log.WithField("channelID", channelID).Info("Service enabled for channel")
-	return "已成功啟用 PTT Alertor 服務於此頻道。"
-}
-
-// handleUnlisten disables PTT Alertor service for the given channelID.
-func handleUnlisten(channelID string) string {
-	u := models.User().Find(channelID)
-	if u.Profile.Account == "" {
-		// Similar to handleListen, an empty Account suggests the channel isn't recognized.
-		return "停用服務失敗，無法識別頻道帳號。請確認此頻道是否已啟用服務。"
-	}
-	u.Enable = false
-	if err := u.Update(); err != nil {
-		log.WithError(err).WithField("channelID", channelID).Error("Disable service failed in handleUnlisten")
-		return "停用服務失敗，請稍後再試或聯繫開發者。"
-	}
-	log.WithField("channelID", channelID).Info("Service disabled for channel")
-	return "已成功停用 PTT Alertor 服務於此頻道。"
 }
 
 func handleCommandLine(userID, command, text string) string {
@@ -654,60 +659,35 @@ func HandleTelegramFollow(id string, chatID int64) error {
 }
 
 // HandleDiscordFollow handles user follow event from Discord.
-// The 'userID' parameter now receives the channelID, which will be used as the accountKey.
-// channelID is the Discord Channel ID where the command was initiated or for DMs.
-// guildID is the Discord Guild ID (server ID) if applicable.
-func HandleDiscordFollow(guildID, channelID, userIDAsAccountKey string) error {
-	accountKey := userIDAsAccountKey // userIDAsAccountKey is the m.ChannelID passed from discord.go
-	u := models.User().Find(accountKey)
+// rawChannelIDFromDiscord is the original m.ChannelID.
+func HandleDiscordFollow(guildID, channelID, rawChannelIDFromDiscord string) error {
+    accountKeyForDB := discordAccountPrefix + rawChannelIDFromDiscord // e.g., "discord_channel:12345"
 
-	// Determine if this is a new user.
-	// A reliable way is to check if u.CreateTime is zero, assuming it's set upon creation and not otherwise.
-	// Or, if u.Profile.Account is empty after Find if Find doesn't auto-populate it.
-	// Let's assume u.CreateTime.IsZero() is the correct check for a new user record.
-	// Another way: check if Profile.Account is empty if Find doesn't set it for new users.
-	// For this implementation, we'll check if the user existed before this call.
-	// This requires checking a field that is only populated upon actual user creation/saving.
-	// If u.Profile.Account is not set by Find if the user doesn't exist, that's a good check.
-	// Let's assume u.Profile.Account would be empty if the user is truly new before any assignment.
-	// However, models.User().Find(accountKey) might initialize u.Profile.Account = accountKey
-	// A more robust check for "newness" is often `u.CreateTime.IsZero()` if CreateTime is only set upon actual creation.
-	// Or, if `Find` returns a user with an empty `Account` field when it's a new record.
-	// Given the existing structure, let's capture the state *before* we modify `u.Profile`.
-	
-	isNewUser := u.CreateTime.IsZero() // Assuming CreateTime is zero for a new user object from Find.
-                                      // Or more accurately, if Find returns a user that doesn't exist yet, 
-                                      // its CreateTime (or equivalent persistent field) would be the zero value.
+    u := models.User().Find(accountKeyForDB) // Use prefixed ID for DB operations
 
-	// Set or update the user's profile
-	u.Profile.Account = accountKey
-	u.Profile.DiscordChannelID = accountKey // Now using accountKey (channelID) here as well
-	u.Profile.Type = "discord_channel"     // Set type to "discord_channel"
+    isNewUser := u.CreateTime.IsZero() // Check for new user (assuming CreateTime is zero for new)
 
-	// Clear other platform identifiers if this is primarily a Discord channel user
-	// This depends on desired behavior: should a Discord channel "take over" an existing user?
-	// For now, we won't clear them, allowing a user to be multi-platform.
-	// u.Profile.Line = ""
-	// u.Profile.Messenger = ""
-	// u.Profile.Telegram = ""
-	// u.Profile.Email = ""
+    u.Profile.Account = accountKeyForDB         // Store prefixed ID in Account
+    u.Profile.DiscordChannelID = rawChannelIDFromDiscord // Store raw channelID here
+    u.Profile.Type = "discord_channel"        // Set type
 
+    logFields := log.Fields{
+        "accountInDB":       u.Profile.Account,
+        "rawChannelID":      u.Profile.DiscordChannelID,
+        "guildID":           guildID,
+        "isNewUser":         isNewUser,
+        "platform":          "discord",
+        "profileTypeSet":    u.Profile.Type,
+    }
 
-	logFields := log.Fields{
-		"accountKey": accountKey,
-		"channelID":  channelID, // This is the same as accountKey in this context
-		"guildID":    guildID,
-		"isNewUser":  isNewUser,
-		"platform":   "discord",
-	}
+    if isNewUser {
+        log.WithFields(logFields).Info("New Discord channel user record to be created")
+    } else {
+        // Log if we are re-activating or just re-confirming an existing Discord channel user
+        log.WithFields(logFields).Info("Existing Discord channel user record to be updated/followed")
+    }
 
-	if isNewUser {
-		log.WithFields(logFields).Info("New Discord channel user record to be created")
-	} else {
-		log.WithFields(logFields).Info("Existing Discord channel user record to be updated")
-	}
-
-	return handleFollow(u, isNewUser)
+    return handleFollow(u, isNewUser) // handleFollow will set u.Enable = true
 }
 
 func handleFollow(u user.User, isNewUser bool) error {

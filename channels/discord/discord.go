@@ -11,8 +11,11 @@ import (
 
 	log "github.com/Ptt-Alertor/logrus"
 	"github.com/Ptt-Alertor/ptt-alertor/command"
+	"github.com/Ptt-Alertor/ptt-alertor/models" // Added import
 	"github.com/bwmarrin/discordgo"
 )
+
+const discordAccountPrefix = "discord_channel:"
 
 var (
 	// discordWebhookURL is no longer the primary method. Kept for now if direct webhook sending is still needed somewhere.
@@ -84,10 +87,27 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		"message":   m.Content,
 	}).Debug("Discord message received")
 
-	var actualCommand string
-	botMentioned := false
+	// Get current channel's user/enable state
+	accountKeyForDB := discordAccountPrefix + m.ChannelID // Use prefixed ID
+	channelUser := models.User().Find(accountKeyForDB)
+	// A channel is listening if its specific, prefixed account record exists, is enabled, and type matches.
+	isChannelListening := channelUser.Enable &&
+	                      channelUser.Profile.Account == accountKeyForDB &&
+	                      channelUser.Profile.Type == "discord_channel"
 
-	// 檢查 Bot 是否在訊息的提及列表中
+	log.WithFields(log.Fields{
+		"channelID":             m.ChannelID,
+		"accountKeyInDB":        accountKeyForDB,
+		"retrievedRawAccount":   channelUser.Profile.Account,      // Log the Account field from DB
+		"retrievedEnableFlag":   channelUser.Enable,               // Log the Enable flag from DB
+		"retrievedProfileType":  channelUser.Profile.Type,         // Log the Type from DB
+		"isConsideredListening": isChannelListening,             // Log the derived listening state
+	}).Debug("Checked channel initial listening state")
+
+	var textToHandle string
+	var executeCommand bool = false
+	var botMentioned bool = false
+
 	for _, mentionedUser := range m.Mentions {
 		if mentionedUser.ID == s.State.User.ID {
 			botMentioned = true
@@ -95,58 +115,110 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-	if !botMentioned {
-		return // 如果 Bot 沒有被提及，則忽略此訊息
+	parsedMentionCommand := ""
+	if botMentioned {
+		botMentionString := "<@" + s.State.User.ID + ">"
+		botMentionStringWithNick := "<@!" + s.State.User.ID + ">"
+		// Check for nickname mention first as it's more specific
+		if strings.HasPrefix(m.Content, botMentionStringWithNick) {
+			parsedMentionCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionStringWithNick, "", 1))
+		} else if strings.HasPrefix(m.Content, botMentionString) {
+			parsedMentionCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionString, "", 1))
+		}
 	}
 
-	// 解析指令：移除 Bot 的提及部分，並去除前後空白
-	botMentionString := "<@" + s.State.User.ID + ">"
-	botMentionStringWithNick := "<@!" + s.State.User.ID + ">"
+	// --- Special handling for listen/unlisten commands (these always require a mention) ---
+	if botMentioned && (strings.EqualFold(parsedMentionCommand, "監聽") || strings.EqualFold(parsedMentionCommand, "listen")) {
+		// Pass raw m.ChannelID to HandleDiscordFollow; it forms the prefixed key internally.
+		if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
+			log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'listen' command.")
+			s.ChannelMessageSend(m.ChannelID, "處理監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
+			return // Stop processing
+		}
+		textToHandle = parsedMentionCommand // "監聽" or "listen"
+		executeCommand = true
+		// Update isChannelListening for the current request's scope, as it's now active.
+		isChannelListening = true 
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "newListeningState": isChannelListening}).Info("Processed 'listen' command.")
 
-	if strings.HasPrefix(m.Content, botMentionStringWithNick) {
-		actualCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionStringWithNick, "", 1))
-	} else if strings.HasPrefix(m.Content, botMentionString) {
-		actualCommand = strings.TrimSpace(strings.Replace(m.Content, botMentionString, "", 1))
-	} else {
-		log.Warnf("Bot was mentioned by %s in channel %s, but command format was not recognized: %s", m.Author.Username, m.ChannelID, m.Content)
-		return
+	} else if botMentioned && (strings.EqualFold(parsedMentionCommand, "取消監聽") || strings.EqualFold(parsedMentionCommand, "unlisten")) {
+		// Pass raw m.ChannelID to HandleDiscordFollow.
+		if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
+			log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'unlisten' command.")
+			s.ChannelMessageSend(m.ChannelID, "處理取消監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
+			return // Stop processing
+		}
+		textToHandle = parsedMentionCommand // "取消監聽" or "unlisten"
+		executeCommand = true
+		// Update isChannelListening for the current request's scope.
+		isChannelListening = false 
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "command": textToHandle, "newListeningState": isChannelListening}).Info("Processed 'unlisten' command.")
+	
+	} else { // Not a listen/unlisten command, proceed with state-based logic
+		if isChannelListening {
+			potentialDirectCommand := strings.TrimSpace(m.Content)
+			// Use command.IsKnownCommand to check if it's a command users can type directly
+			if command.IsKnownCommand(potentialDirectCommand) {
+				textToHandle = potentialDirectCommand
+				executeCommand = true
+				log.WithFields(log.Fields{"channelID": m.ChannelID, "directCommand": textToHandle}).Debug("Processing direct command in listening channel.")
+			} else if botMentioned { // Bot was mentioned, but not for listen/unlisten
+				if parsedMentionCommand != "" { // A command followed the mention
+					textToHandle = parsedMentionCommand
+					executeCommand = true
+					log.WithFields(log.Fields{"channelID": m.ChannelID, "mentionedCommand": textToHandle}).Debug("Processing mentioned command in listening channel.")
+				} else { // Bot was mentioned, but no specific command followed (e.g., just "@Bot")
+					s.ChannelMessageSend(m.ChannelID, "您好，我正在監聽此頻道。可以直接輸入指令，或用 `@PTT通知 指令` 的方式互動。(正體中文)")
+					log.WithFields(log.Fields{"channelID": m.ChannelID}).Debug("Bot mentioned with no command in listening channel. Sent help hint.")
+					// executeCommand remains false, no further command processing
+				}
+			} else { // Not a known direct command and bot was not mentioned in a listening channel. Ignore.
+				log.WithFields(log.Fields{"channelID": m.ChannelID, "message": m.Content}).Debug("Ignoring non-command message in listening channel.")
+				// executeCommand remains false
+			}
+		} else { // Channel is NOT listening (isChannelListening == false)
+			if botMentioned { // Bot was mentioned (and it's not listen/unlisten, which were handled above)
+				if parsedMentionCommand != "" { // A command followed the mention
+					// Respond that the channel is not listening, instruct how to listen.
+					s.ChannelMessageSend(m.ChannelID, "此頻道尚未啟用監聽模式。請先使用 `@PTT通知 監聽` 來啟用服務。(正體中文)")
+					log.WithFields(log.Fields{"channelID": m.ChannelID, "mentionedCommand": parsedMentionCommand}).Info("Bot mentioned with command in non-listening channel. Replied with 'please listen first'.")
+				} else { // User just mentioned the bot with no command text
+					s.ChannelMessageSend(m.ChannelID, "您好！如需啟用 PTT 通知服務，請輸入 `@PTT通知 監聽`。(正體中文)")
+					log.WithFields(log.Fields{"channelID": m.ChannelID}).Info("Bot mentioned with no command in non-listening channel. Replied with 'how to listen'.")
+				}
+				// executeCommand remains false, no command processed unless it was 'listen'
+			} else { // Not listening AND bot not mentioned. Ignore.
+				log.WithFields(log.Fields{"channelID": m.ChannelID}).Debug("Ignoring message in non-listening, non-mentioned channel.")
+				// executeCommand remains false
+			}
+		}
 	}
 
-	if actualCommand == "" {
-		// Optionally send help message or just return
-		// s.ChannelMessageSend(m.ChannelID, "您好！請在提及我之後輸入指令，例如 `@PttAlertor 指令`")
-		return
-	}
+	// --- Actual command execution ---
+	if executeCommand && textToHandle != "" {
+		log.WithFields(log.Fields{
+			"channelID": m.ChannelID, 
+			"accountKeyForDB": accountKeyForDB, // Log the ID being sent to HandleCommand
+			"textToHandle": textToHandle, 
+			"isChannelListeningNow": isChannelListening, // Log listening state at the time of execution
+		}).Info("Preparing to execute command.")
+		
+		// IMPORTANT: Pass accountKeyForDB (prefixed ID) to HandleCommand as the userID argument
+		responseText := command.HandleCommand(textToHandle, accountKeyForDB, true) 
 
-	// Ensure user continuity for Discord interactions using the channel ID as the account key
-	err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID) // Use m.ChannelID as the third argument
-	if err != nil {
-		log.WithError(err).WithFields(log.Fields{
-			"channelID": m.ChannelID,
-			"guildID":   m.GuildID,
-		}).Error("Failed to ensure Discord user continuity in messageCreate")
-		// Decide if this error is critical enough to stop further processing.
+		if responseText != "" {
+			_, err := s.ChannelMessageSend(m.ChannelID, responseText)
+			if err != nil {
+				log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID}).Error("Failed to send Discord message response")
+			}
+		}
 	} else {
 		log.WithFields(log.Fields{
-			"channelID": m.ChannelID,
-			"guildID":   m.GuildID,
-		}).Info("Discord user continuity ensured in messageCreate")
-	}
-
-	// Use the channel ID directly as the account identifier for command handling
-	accountForCommands := m.ChannelID
-
-	// Call HandleCommand to process the extracted actualCommand with the channel ID.
-	responseText := command.HandleCommand(actualCommand, accountForCommands, true)
-
-	if responseText != "" {
-		_, err := s.ChannelMessageSend(m.ChannelID, responseText) // Send response back to the original channel
-		if err != nil {
-			log.WithError(err).WithFields(log.Fields{
-				"channelID":          m.ChannelID,
-				"accountForCommands": accountForCommands,
-			}).Error("Failed to send Discord message response")
-		}
+			"channelID": m.ChannelID, 
+			"executeCommandFlag": executeCommand, 
+			"textToHandle": textToHandle, 
+			"originalContent": m.Content,
+		}).Debug("No command executed or no text to handle for final processing.")
 	}
 }
 
