@@ -220,10 +220,6 @@ func HandleCommand(text string, userID string, isUser bool) string {
 		return handleCommentList(userID)
 	case "add", "del":
 		return handleCommandLine(userID, command, text)
-	case "internal_listen": // <--- MODIFIED HERE
-		return handleListen(userID)
-	case "internal_unlisten": // <--- MODIFIED HERE
-		return handleUnlisten(userID)
 	}
 	if !isUser {
 		return ""
