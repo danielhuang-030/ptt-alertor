@@ -1,7 +1,11 @@
 package jobs
 
 import (
+	"fmt"
 	"strings" // Added import
+	"sync"
+	"time"
+
 	log "github.com/Ptt-Alertor/logrus"
 
 	"github.com/Ptt-Alertor/ptt-alertor/channels/discord" // Added import
@@ -16,6 +20,12 @@ import (
 const workers = 300
 
 var ckCh = make(chan check)
+
+var (
+	recentlyNotifiedEvents = make(map[string]time.Time)
+	recentlyNotifiedMutex  = &sync.Mutex{}
+	notificationCoolDown   = 1 * time.Minute // Notification cool-down time, e.g., 1 minute
+)
 
 func init() {
 	for i := 0; i < workers; i++ {
@@ -66,8 +76,45 @@ func sendMessage(c check) {
 		"articles_count":    len(cr.articles),
 		"target_discord_ch": cr.Profile.DiscordChannelID,
 	}).Info("sendMessage BEGIN")
-	account := cr.Profile.Account
 
+	// --- New Notification Cool-down Logic ---
+	notificationKey := cr.board // Base key is board name
+	if cr.subType == "keyword" || cr.subType == "author" {
+		// For specific and common subscription types, use a more precise key
+		notificationKey = fmt.Sprintf("%s:%s:%s", cr.board, cr.subType, strings.ToLower(cr.word)) // Ensure word is also standardized for the key
+	} else if cr.subType != "" && cr.word != "" {
+		// Handle other possible subType + word combinations similarly
+		notificationKey = fmt.Sprintf("%s:%s:%s", cr.board, cr.subType, strings.ToLower(cr.word))
+	} else if cr.subType != "" {
+		// If only subType is present (e.g., special notification types)
+		notificationKey = fmt.Sprintf("%s:%s", cr.board, cr.subType)
+	}
+	// If the key remains just the board name, cool-down is board-level.
+	// The goal is for the key to identify "the same batch of content" as precisely as possible.
+
+	log.WithField("calculated_notification_key", notificationKey).Debug("Calculated notification key for cool-down check.")
+
+	recentlyNotifiedMutex.Lock()
+	lastNotifiedTime, found := recentlyNotifiedEvents[notificationKey]
+	currentTime := time.Now()
+	shouldSkipNotification := false
+	if found && currentTime.Sub(lastNotifiedTime) < notificationCoolDown {
+		log.WithFields(log.Fields{
+			"notification_key":   notificationKey,
+			"last_notified_at":   lastNotifiedTime.Format(time.RFC3339),
+			"cool_down_duration": notificationCoolDown.String(),
+			"time_since_last":    currentTime.Sub(lastNotifiedTime).String(),
+		}).Info("Notification for this key is in cool-down period, skipping all platform sends for this event.")
+		shouldSkipNotification = true
+	}
+	recentlyNotifiedMutex.Unlock() // Unlock after read operations
+
+	if shouldSkipNotification {
+		return // Skip all sending if in cool-down
+	}
+	// --- End of New Notification Cool-down Logic ---
+
+	account := cr.Profile.Account
 	finalSentPlatforms := []string{} // 記錄最終成功發送的平台
 
 	discordAttempted := false
@@ -246,6 +293,12 @@ func sendMessage(c check) {
 			"type":     cr.subType,
 			"word":     cr.word,
 		}).Info("Message Sent")
+
+		// --- New: Update cool-down timestamp for successfully sent notification ---
+		recentlyNotifiedMutex.Lock()
+		recentlyNotifiedEvents[notificationKey] = time.Now() // Use current time to update
+		recentlyNotifiedMutex.Unlock()
+		log.WithField("notification_key_cooled_down", notificationKey).Debug("Updated cool-down timestamp for successfully sent notification key.")
 	} else {
         log.WithFields(log.Fields{
 			"account":  account, "board": cr.board, "type": cr.subType, "word": cr.word,
