@@ -26,6 +26,7 @@ var highBoardNames = strings.Split(os.Getenv("BOARD_HIGH"), ",")
 
 func init() {
 	for _, name := range highBoardNames {
+		name = strings.ToLower(name)
 		bd := models.Board()
 		bd.Name = name
 		highBoards = append(highBoards, bd)
@@ -104,7 +105,7 @@ func (c Checker) Run() {
 		var offPeak bool
 		duration := c.duration
 		highBoardNamesSet := make(map[string]struct{})
-		for _, bd := range highBoards {
+		for _, bd := range highBoards { // bd.Name is already lowercased from init()
 			highBoardNamesSet[bd.Name] = struct{}{}
 		}
 		for {
@@ -180,9 +181,10 @@ func (c Checker) Stop() {
 func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
 	for _, bd := range bds {
 		if skipNames != nil {
-			if _, shouldSkip := skipNames[bd.Name]; shouldSkip {
-				log.WithField("board", bd.Name).Debug("Skipping board in normal check as it's a high priority board")
-				continue // 跳過這個看板，因為它在 skipNames 中
+			boardNameLower := strings.ToLower(bd.Name)
+			if _, shouldSkip := skipNames[boardNameLower]; shouldSkip {
+				log.WithField("board", bd.Name).Debug("Skipping board in normal check as it's a high priority board (name standardized)") // 更新日誌訊息
+				continue
 			}
 		}
 		time.Sleep(duration)
@@ -220,8 +222,8 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 
 func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
 	for _, sub := range user.Subscribes {
-		if bd.Name == sub.Board {
-			cker.board = sub.Board
+		if bd.Name == strings.ToLower(sub.Board) {
+			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
 			for _, keyword := range sub.Keywords {
 				go checkKeyword(keyword, bd, cker)
 			}
@@ -260,8 +262,8 @@ func checkAuthorSubscriber(bd *board.Board, cker Checker) {
 
 func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
 	for _, sub := range user.Subscribes {
-		if bd.Name == sub.Board {
-			cker.board = sub.Board
+		if bd.Name == strings.ToLower(sub.Board) {
+			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
 			for _, author := range sub.Authors {
 				go checkAuthor(author, bd, cker)
 			}
