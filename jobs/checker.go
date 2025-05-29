@@ -4,11 +4,6 @@ import (
 	"sync"
 )
 
-<<<<<<< HEAD
-// Unique synchronization mechanism for board processing
-// This file only contains the mutex-based synchronization improvements
-// All other functionality is implemented in check.go
-=======
 const checkHighBoardDuration = 1 * time.Second
 
 var boardCh = make(chan *board.Board, 700)
@@ -163,7 +158,6 @@ func (c Checker) Stop() {
 	c.done <- struct{}{}
 	log.Info("Checker Stop")
 }
->>>>>>> parent of 5a422ba... Alright, I've made some improvements to how background notifications work and added more detailed logging to help track down any duplicate messages.
 
 var (
 	boardProcessingMutex      = &sync.Mutex{}
@@ -173,11 +167,6 @@ var (
 // checkNewArticle provides thread-safe board processing
 // The full implementation is in check.go - this just adds the mutex wrapper
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
-<<<<<<< HEAD
-	if bd == nil || bd.Name == "" {
-		return
-	}
-=======
 	bd.WithNewArticles()
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
 		bd.Articles = bd.OnlineArticles
@@ -204,7 +193,6 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 		}
 	}
 }
->>>>>>> parent of 5a422ba... Alright, I've made some improvements to how background notifications work and added more detailed logging to help track down any duplicate messages.
 
 	// Acquire lock to prevent concurrent processing of same board
 	boardProcessingMutex.Lock()
@@ -215,17 +203,6 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 	boardsCurrentlyProcessing[bd.Name] = true
 	boardProcessingMutex.Unlock()
 
-<<<<<<< HEAD
-	// Ensure lock is released when done
-	defer func() {
-		boardProcessingMutex.Lock()
-		delete(boardsCurrentlyProcessing, bd.Name)
-		boardProcessingMutex.Unlock()
-	}()
-
-	// The actual implementation comes from check.go
-	// This just provides the synchronization wrapper
-=======
 func checkKeyword(keyword string, bd *board.Board, cker Checker) {
 	keywordArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
@@ -280,5 +257,4 @@ func checkAuthor(author string, bd *board.Board, cker Checker) {
 		cker.word = author
 		cker.ch <- cker
 	}
->>>>>>> parent of 5a422ba... Alright, I've made some improvements to how background notifications work and added more detailed logging to help track down any duplicate messages.
 }
