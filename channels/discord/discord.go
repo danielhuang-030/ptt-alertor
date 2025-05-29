@@ -119,36 +119,33 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	// Ensure user continuity for Discord interactions using the original Discord User ID
-	err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, authorID)
+	// Ensure user continuity for Discord interactions using the channel ID as the account key
+	err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID) // Use m.ChannelID as the third argument
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{
-			"originalUserID": authorID,
-			"channelID":      m.ChannelID,
-			"guildID":        m.GuildID,
+			"channelID": m.ChannelID,
+			"guildID":   m.GuildID,
 		}).Error("Failed to ensure Discord user continuity in messageCreate")
 		// Decide if this error is critical enough to stop further processing.
-		// For now, log and continue to attempt command handling.
 	} else {
 		log.WithFields(log.Fields{
-			"originalUserID": authorID,
-			"channelID":      m.ChannelID,
-			"guildID":        m.GuildID,
+			"channelID": m.ChannelID,
+			"guildID":   m.GuildID,
 		}).Info("Discord user continuity ensured in messageCreate")
 	}
 
-	// Create the internal account ID for command handling
-	internalAccountID := myutil.CreateDiscordInternalID(authorID, m.ChannelID)
+	// Use the channel ID directly as the account identifier for command handling
+	accountForCommands := m.ChannelID
 
-	// Call HandleCommand to process the extracted actualCommand with the internalAccountID.
-	responseText := command.HandleCommand(actualCommand, internalAccountID, true)
+	// Call HandleCommand to process the extracted actualCommand with the channel ID.
+	responseText := command.HandleCommand(actualCommand, accountForCommands, true)
 
 	if responseText != "" {
 		_, err := s.ChannelMessageSend(m.ChannelID, responseText) // Send response back to the original channel
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{
-				"channelID":         m.ChannelID,
-				"internalAccountID": internalAccountID,
+				"channelID":          m.ChannelID,
+				"accountForCommands": accountForCommands,
 			}).Error("Failed to send Discord message response")
 		}
 	}
