@@ -221,29 +221,34 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 }
 
 func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
+	processedKeywordsThisUserBoard := make(map[string]bool)
 	for _, sub := range user.Subscribes {
 		if bd.Name == strings.ToLower(sub.Board) {
 			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
 			for _, keyword := range sub.Keywords {
-				go checkKeyword(keyword, bd, cker)
+				lowerKeyword := strings.ToLower(keyword)
+				if !processedKeywordsThisUserBoard[lowerKeyword] {
+					processedKeywordsThisUserBoard[lowerKeyword] = true
+					go checkKeyword(lowerKeyword, bd, cker)
+				}
 			}
 		}
 	}
 }
 
-func checkKeyword(keyword string, bd *board.Board, cker Checker) {
+func checkKeyword(keywordLowercase string, bd *board.Board, cker Checker) {
 	keywordArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if newAtcl.MatchKeyword(keyword) {
+		if newAtcl.MatchKeyword(keywordLowercase) {
 			newAtcl.Author = ""
 			keywordArticles = append(keywordArticles, newAtcl)
 		}
 	}
 	if len(keywordArticles) != 0 {
-		cker.keyword = keyword
+		cker.keyword = keywordLowercase
 		cker.articles = keywordArticles
 		cker.subType = "keyword"
-		cker.word = keyword
+		cker.word = keywordLowercase
 		cker.ch <- cker
 	}
 }
@@ -261,28 +266,33 @@ func checkAuthorSubscriber(bd *board.Board, cker Checker) {
 }
 
 func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
+	processedAuthorsThisUserBoard := make(map[string]bool)
 	for _, sub := range user.Subscribes {
 		if bd.Name == strings.ToLower(sub.Board) {
 			cker.board = bd.Name // Ensure cker.board uses the standardized lowercase name
 			for _, author := range sub.Authors {
-				go checkAuthor(author, bd, cker)
+				lowerAuthor := strings.ToLower(author)
+				if !processedAuthorsThisUserBoard[lowerAuthor] {
+					processedAuthorsThisUserBoard[lowerAuthor] = true
+					go checkAuthor(lowerAuthor, bd, cker)
+				}
 			}
 		}
 	}
 }
 
-func checkAuthor(author string, bd *board.Board, cker Checker) {
+func checkAuthor(authorLowercase string, bd *board.Board, cker Checker) {
 	authorArticles := make(article.Articles, 0)
 	for _, newAtcl := range bd.NewArticles {
-		if strings.EqualFold(newAtcl.Author, author) {
+		if strings.EqualFold(newAtcl.Author, authorLowercase) {
 			authorArticles = append(authorArticles, newAtcl)
 		}
 	}
 	if len(authorArticles) != 0 {
-		cker.author = author
+		cker.author = authorLowercase
 		cker.articles = authorArticles
 		cker.subType = "author"
-		cker.word = author
+		cker.word = authorLowercase
 		cker.ch <- cker
 	}
 }
