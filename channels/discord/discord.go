@@ -11,7 +11,6 @@ import (
 
 	log "github.com/Ptt-Alertor/logrus"
 	"github.com/Ptt-Alertor/ptt-alertor/command"
-	"github.com/Ptt-Alertor/ptt-alertor/myutil" // Added import
 	"github.com/bwmarrin/discordgo"
 )
 
