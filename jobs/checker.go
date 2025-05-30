@@ -96,21 +96,10 @@ func (c Checker) Run() {
 			case <-ctx.Done():
 				return
 			default:
-				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards")
-				log.Debug("--- High Priority Boards Details ---")
-				for i, bd := range highBoards {
-					originalName := bd.Name // Assuming bd.Name is already standardized as per previous attempt
-					standardizedName := strings.ToLower(strings.TrimSpace(originalName)) // Re-standardize for absolute certainty in log
-					log.WithFields(log.Fields{
-						"index":             i,
-						"board_name_as_is":  originalName,
-						"board_name_q":      fmt.Sprintf("%q", originalName),
-						"standardized_name": standardizedName,
-						"standardized_name_q": fmt.Sprintf("%q", standardizedName),
-						"board_ptr":         fmt.Sprintf("%p", bd),
-					}).Debug("High priority board detail")
-				}
-				log.Debug("--- End of High Priority Boards Details ---")
+				// log.Debug("--- High Priority Boards Details ---") // Commented out
+				// for i, bd := range highBoards { ... } // Commented out detailed loop
+				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards. Detailed board list logging was reduced.")
+				// log.Debug("--- End of High Priority Boards Details ---") // Commented out
 				checkBoards(highBoards, checkHighBoardDuration, nil) // No skipNames for high priority
 			}
 		}
@@ -172,21 +161,10 @@ func (c Checker) Run() {
 				}
 			default:
 				allNormalBoards := models.Board().All() // Board.All() now returns standardized names
-				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards")
-				log.Debug("--- Normal Boards List Details (before passing to checkBoards) ---")
-				for i, bd := range allNormalBoards {
-					originalName := bd.Name // Assuming bd.Name is already standardized by Board.All()
-					standardizedName := strings.ToLower(strings.TrimSpace(originalName)) // Re-standardize for log
-					log.WithFields(log.Fields{
-						"index":             i,
-						"board_name_as_is":  originalName,
-						"board_name_q":      fmt.Sprintf("%q", originalName),
-						"standardized_name": standardizedName,
-						"standardized_name_q": fmt.Sprintf("%q", standardizedName),
-						"board_ptr":         fmt.Sprintf("%p", bd),
-					}).Debug("Normal board detail (from models.Board().All())")
-				}
-				log.Debug("--- End of Normal Boards List Details ---")
+				// log.Debug("--- Normal Boards List Details (before passing to checkBoards) ---") // Commented out
+				// for i, bd := range allNormalBoards { ... } // Commented out detailed loop
+				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards. Detailed board list logging was reduced.")
+				// log.Debug("--- End of Normal Boards List Details ---") // Commented out
 				checkBoards(allNormalBoards, duration, highBoardNamesSet)
 			}
 		}
@@ -260,24 +238,24 @@ func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[strin
 	}
 
 	for _, bd := range bds {
-		originalNameLoop := bd.Name // Assuming bd.Name is already standardized by its creator
-		standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for logging consistency
-		log.WithFields(log.Fields{
-			"board_name_as_is":  originalNameLoop,
-			"board_name_q":      fmt.Sprintf("%q", originalNameLoop),
-			"standardized_name": standardizedNameLoop,
-			"standardized_name_q": fmt.Sprintf("%q", standardizedNameLoop),
-			"board_ptr":         fmt.Sprintf("%p", bd),
-		}).Debug("Board in checkBoards loop (before skip and cool-down check)")
+		// originalNameLoop := bd.Name // Assuming bd.Name is already standardized by its creator
+		// standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for logging consistency
+		// log.WithFields(log.Fields{ // Commented out: "Board in checkBoards loop (before skip and cool-down check)"
+		// 	"board_name_as_is":  originalNameLoop,
+		// 	"board_name_q":      fmt.Sprintf("%q", originalNameLoop),
+		// 	"standardized_name": standardizedNameLoop,
+		// 	"standardized_name_q": fmt.Sprintf("%q", standardizedNameLoop),
+		// 	"board_ptr":         fmt.Sprintf("%p", bd),
+		// }).Debug("Board in checkBoards loop (before skip and cool-down check)")
 
 		// SkipNames check (bd.Name should be used here as it's expected to be standardized by creator)
 		if skipNames != nil {
 			_, shouldSkip := skipNames[bd.Name] // bd.Name is the standardized name
-			log.WithFields(log.Fields{
-				"board_name_checked": bd.Name,
-				"board_name_checked_q": fmt.Sprintf("%q", bd.Name),
-				"found_in_skipNames": shouldSkip,
-			}).Debug("skipNames check result")
+			// log.WithFields(log.Fields{ // This log is NOW COMMENTED OUT
+			// 	"board_name_checked": bd.Name,
+			// 	"board_name_checked_q": fmt.Sprintf("%q", bd.Name),
+			// 	"found_in_skipNames": shouldSkip,
+			// }).Debug("skipNames check result")
 			if shouldSkip {
 				log.WithField("board", bd.Name).Debug("Skipping board as it was found in skipNames.")
 				continue
@@ -286,11 +264,10 @@ func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[strin
 
 		// --- Old Cool-down Logic Removed ---
 
-		log.WithFields(log.Fields{ 
+		log.WithFields(log.Fields{ // Ensure this is Debug level
 			"board_name": bd.Name, 
 			"board_ptr": fmt.Sprintf("%p", bd),
-			// "last_processed_update_to" field is removed as it was part of old cool-down
-		}).Debug("Board passed skipName check (and old cool-down removed), proceeding to start checkNewArticle goroutine.")
+		}).Debug("Board passed skipName check, proceeding to start checkNewArticle goroutine.") // Message adjusted slightly for clarity
 
 		time.Sleep(duration) 
 		go checkNewArticle(bd, boardCh)
