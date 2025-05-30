@@ -140,6 +140,83 @@ func sendMessage(c check) {
 	account := cr.Profile.Account
 	finalSentPlatforms := []string{} // 記錄最終成功發送的平台
 
+	// Declare messageContent and embed here to be populated by the new logic
+	var messageContent string
+	var embed *discord.Embed
+
+	// Standardize displayBoard and displayWord
+	displayBoard := strings.ToLower(strings.TrimSpace(cr.board))
+	displayWord := ""
+	if cr.word != "" {
+		displayWord = strings.ToLower(strings.TrimSpace(cr.word))
+	}
+
+	if len(cr.articles) > 0 {
+		if len(cr.articles) == 1 {
+			article := cr.articles[0]
+			title := strings.TrimSpace(article.Title)
+			if len(title) > 250 { // Discord Embed Title limit is 256
+				title = title[:250] + "..."
+			}
+			messageContent = fmt.Sprintf("看板 [%s] 有新文章符合您的訂閱 '%s': %s", displayBoard, displayWord, article.Title)
+			embed = &discord.Embed{
+				Title:       title,
+				Description: "點擊查看文章：\n" + article.Link,
+				URL:         article.Link,
+				Color:       0x0099FF,
+				Footer:      &discord.EmbedFooter{Text: "PTT Alertor"},
+			}
+			// Optional: Add author and date if available
+			// if article.Author != "" { embed.Author = &discord.EmbedAuthor{Name: article.Author} }
+			// if !article.Date.IsZero() { embed.Timestamp = article.Date.Format(time.RFC3339) }
+		} else { // Multiple articles
+			messageContent = fmt.Sprintf("看板 [%s] 有 %d 篇新文章符合您的訂閱 '%s'。", displayBoard, len(cr.articles), displayWord)
+			
+			embedDescription := "偵測到多篇相關文章：\n"
+			var fields []*discord.EmbedField
+
+			for i, article := range cr.articles {
+				fieldTitle := strings.TrimSpace(article.Title)
+				if len(fieldTitle) > 250 { // Discord Embed Field Name limit is 256
+					fieldTitle = fieldTitle[:250] + "..."
+				}
+				fieldValue := article.Link
+				if len(fieldValue) > 1018 { // Discord Embed Field Value limit is 1024
+					 fieldValue = fieldValue[:1018] + "..."
+				}
+
+				if i < 5 { // Max 5 articles in fields
+					fields = append(fields, &discord.EmbedField{
+						Name:   fmt.Sprintf("%d. %s", i+1, fieldTitle),
+						Value:  fieldValue,
+						Inline: false,
+					})
+				} else {
+					embedDescription += fmt.Sprintf("...還有 %d 篇更多文章未在下方列表中完全顯示。\n", len(cr.articles)-i)
+					break 
+				}
+			}
+
+			embed = &discord.Embed{
+				Title:       fmt.Sprintf("[%s] %d 篇關於 '%s' 的新文章", displayBoard, len(cr.articles), displayWord),
+				Description: embedDescription,
+				Color:       0x0099FF,
+				Fields:      fields,
+				Footer:      &discord.EmbedFooter{Text: "PTT Alertor"},
+			}
+		}
+	} else {
+		log.WithFields(log.Fields{
+			"notification_key": notificationKey, 
+			"board": cr.board, "type": cr.subType, "word": cr.word,
+		}).Warn("sendMessage called with zero articles in Checker object, no Discord message will be sent.")
+		return // No articles, nothing to send for Discord (and likely other platforms)
+	}
+	
+	if len(messageContent) > 2000 { // Discord message content limit
+		messageContent = messageContent[:1997] + "..."
+	}
+
 	discordAttempted := false
 	discordSentSuccessfully := false
 	if cr.Profile.DiscordChannelID != "" {
@@ -148,10 +225,10 @@ func sendMessage(c check) {
 		// Prepare base log fields for Discord notification attempt
 		attemptLogFields := log.Fields{
 			"platform":                  "discord_bot",
-			"board":                     cr.board,
+			"board":                     cr.board, // Use original cr.board for logging consistency if needed
 			"type":                      cr.subType,
 			"word":                      cr.word,
-			"notificationTargetChannelID": cr.Profile.DiscordChannelID, // Explicitly log the channel being sent to
+			"notificationTargetChannelID": cr.Profile.DiscordChannelID,
 		}
 		parsedUserID, parsedChannelIDFromAccount, parseErr := myutil.ParseDiscordInternalID(account)
 		if parseErr == nil {
@@ -159,63 +236,11 @@ func sendMessage(c check) {
 			attemptLogFields["discordUserID"] = parsedUserID
 			attemptLogFields["channelIDFromAccount"] = parsedChannelIDFromAccount
 		} else {
-			attemptLogFields["account"] = account // Fallback to original account if not internal ID format
+			attemptLogFields["account"] = account
 		}
 		log.WithFields(attemptLogFields).Info("Attempting to send Discord notification via Bot")
-
-		// 組裝 Embed (簡易版)
-		var embed *discord.Embed
-		if len(cr.articles) > 0 { // 假設 cr (Checker) 有 articles 欄位
-			article := cr.articles[0] // 只取第一篇文章作為範例
-			embed = &discord.Embed{
-				Title: article.Title,
-				URL:   article.Link,
-				Color: 0x0099FF, // 藍色
-				Footer: &discord.EmbedFooter{
-					Text: "PTT Alertor",
-				},
-			}
-			// 如果希望訊息更豐富，可以遍歷 cr.articles 並添加到 Fields
-			// for _, art := range cr.articles {
-			//    embed.Fields = append(embed.Fields, &discord.EmbedField{Name: art.Title, Value: art.Link})
-			// }
-		}
-
-		// 訊息內容：可以使用 c.String() 或部分內容
-		// 為了避免訊息過長，且主要資訊在 Embed 中，這裡可以留空或用通用提示
-		messageContent := "您有新的 PTT 通知！" // 或者 c.String() 如果它很簡潔
-		if embed != nil && len(cr.articles) == 1 { // 如果只有一篇文章，主訊息可以更具體
-			messageContent = cr.board + " 板有新文章符合您的訂閱：" + cr.articles[0].Title
-		}
-
-		// Discord 訊息長度限制為 2000 characters for content, Embeds also have limits.
-		// c.String() can be very long. If embed is the primary way to show info, keep messageContent concise.
-		if len(messageContent) > 2000 {
-			messageContent = messageContent[:1997] + "..."
-		}
-		// If c.String() is preferred and can be long, it might need to be truncated or split,
-		// but discord.PushMessage currently doesn't auto-split.
-		// For now, we prioritize a concise messageContent if an embed is present.
-		// If no embed, c.String() might be used more directly, but still needs length check.
-		if embed == nil && len(c.String()) > 2000 {
-		    // If no embed and c.String() is too long, use a truncated c.String() or a generic message.
-		    // For this example, let's use a truncated version of c.String() if it's too long.
-		    // Or, stick to the generic "您有新的 PTT 通知！" if c.String() is complex to truncate.
-		    // messageContent = c.String()[:1997] + "..."
-		    // To be safe and simple for now, if embed is nil, messageContent remains generic or c.String() if short.
-		    // The example above already set messageContent to generic or specific for 1 article.
-		    // If c.String() is absolutely needed and can be long, more sophisticated handling is required.
-		    // Let's assume for now if embed is nil, the generic message is okay, or c.String() if it's short.
-		    // If you must use c.String() and it's long:
-		    if len(c.String()) > 0 && len(c.String()) <= 2000 {
-		        messageContent = c.String() // Use c.String() if it's not empty and within limits
-		    } else if len(c.String()) > 2000 {
-		        messageContent = c.String()[:1997] + "..." // Truncate
-		    }
-		    // else messageContent remains "您有新的 PTT 通知！"
-		}
-
-		// Added Debug log before PushMessage
+		
+		// Debug log before PushMessage (this part was already present and correct)
 		var msgSummary string
 		if len(messageContent) > 50 {
 			msgSummary = messageContent[:50] + "..."
