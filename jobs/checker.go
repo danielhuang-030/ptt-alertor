@@ -96,11 +96,8 @@ func (c Checker) Run() {
 			case <-ctx.Done():
 				return
 			default:
-				// log.Debug("--- High Priority Boards Details ---") // Commented out
-				// for i, bd := range highBoards { ... } // Commented out detailed loop
-				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards. Detailed board list logging was reduced.")
-				// log.Debug("--- End of High Priority Boards Details ---") // Commented out
-				checkBoards(highBoards, checkHighBoardDuration, nil) // No skipNames for high priority
+				log.WithField("high_boards_count", len(highBoards)).Debug("Processing high priority boards.") // Simplified further
+				checkBoards(highBoards, checkHighBoardDuration, nil)
 			}
 		}
 	}()
@@ -116,30 +113,22 @@ func (c Checker) Run() {
 		// Dynamically create set of high priority board names to skip them in normal processing
 		highBoardNamesSet := make(map[string]struct{})
 		envBoardHigh := os.Getenv("BOARD_HIGH")
-		log.WithField("BOARD_HIGH_env_val", envBoardHigh).Debug("Read BOARD_HIGH for dynamic skip set creation.")
+		// log.WithField("BOARD_HIGH_env_val", envBoardHigh).Debug("Read BOARD_HIGH for dynamic skip set creation.") // Removed
 		if envBoardHigh != "" {
 			names := strings.Split(envBoardHigh, ",")
 			for _, name := range names {
 				standardizedName := strings.ToLower(strings.TrimSpace(name))
 				if standardizedName != "" {
 					highBoardNamesSet[standardizedName] = struct{}{}
-					log.WithField("board_added_to_skip_set", standardizedName).Debug("Dynamically added to highBoardNamesSet for normal board skipping")
+					// log.WithField("board_added_to_skip_set", standardizedName).Debug("Dynamically added to highBoardNamesSet for normal board skipping") // Removed
 				}
 			}
 		}
-		// Log details of the dynamically created set
 		if len(highBoardNamesSet) == 0 {
-			log.Debug("highBoardNamesSet (for skipping normal boards) is EMPTY after dynamic parsing from ENV.")
+			log.Debug("Skip set (from BOARD_HIGH) for normal boards is EMPTY.") // Simplified
 		} else {
-			log.WithField("skip_set_count", len(highBoardNamesSet)).Debug("highBoardNamesSet (for skipping normal boards) populated dynamically from ENV.")
-			// Optional: Log all names in the set if needed for super detailed debugging
-			// i_dyn := 0
-			// for name_in_set := range highBoardNamesSet {
-			// 	log.WithFields(log.Fields{"index": i_dyn, "name_in_dynamic_set_q": fmt.Sprintf("%q", name_in_set)}).Debug("Name in dynamically created highBoardNamesSet")
-			// 	i_dyn++
-			// }
+			log.WithField("skip_set_count", len(highBoardNamesSet)).Debug("Skip set (from BOARD_HIGH) for normal boards populated.") // Simplified
 		}
-
 
 		for {
 			select {
@@ -161,10 +150,9 @@ func (c Checker) Run() {
 				}
 			default:
 				allNormalBoards := models.Board().All() // Board.All() now returns standardized names
-				// log.Debug("--- Normal Boards List Details (before passing to checkBoards) ---") // Commented out
-				// for i, bd := range allNormalBoards { ... } // Commented out detailed loop
-				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards. Detailed board list logging was reduced.")
-				// log.Debug("--- End of Normal Boards List Details ---") // Commented out
+				// log.Debug("--- Normal Boards List Details (before passing to checkBoards) ---")
+				log.WithField("normal_boards_count", len(allNormalBoards)).Debug("Processing normal boards.") // Simplified further
+				// log.Debug("--- End of Normal Boards List Details ---")
 				checkBoards(allNormalBoards, duration, highBoardNamesSet)
 			}
 		}
@@ -217,59 +205,30 @@ func (c Checker) Stop() {
 }
 
 func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[string]struct{}) {
-	log.WithField("num_boards_received", len(bds)).Debug("checkBoards BEGIN")
-	if skipNames != nil {
-		log.Debug("--- skipNames Map Content (received by checkBoards) ---")
-		i := 0
-		for name := range skipNames {
-			log.WithFields(log.Fields{
-				"index": i,
-				"name_in_skipmap_as_is": name,
-				"name_in_skipmap_q":     fmt.Sprintf("%q", name),
-			}).Debug("Name in skipNames map")
-			i++
-		}
-		if i == 0 {
-			log.Debug("skipNames map is EMPTY")
-		}
-		log.Debug("--- End of skipNames Map Content ---")
-	} else {
-		log.Debug("skipNames map is NIL")
-	}
+	// log.WithField("num_boards_received", len(bds)).Debug("checkBoards BEGIN") // Removed
+	// if skipNames != nil { // Removed skipNames map content logging
+	// 	log.Debug("--- skipNames Map Content (received by checkBoards) ---")
+	// 	...
+	// 	log.Debug("--- End of skipNames Map Content ---")
+	// } else {
+	// 	log.Debug("skipNames map is NIL")
+	// }
 
 	for _, bd := range bds {
-		// originalNameLoop := bd.Name // Assuming bd.Name is already standardized by its creator
-		// standardizedNameLoop := strings.ToLower(strings.TrimSpace(originalNameLoop)) // Re-standardize for logging consistency
-		// log.WithFields(log.Fields{ // Commented out: "Board in checkBoards loop (before skip and cool-down check)"
-		// 	"board_name_as_is":  originalNameLoop,
-		// 	"board_name_q":      fmt.Sprintf("%q", originalNameLoop),
-		// 	"standardized_name": standardizedNameLoop,
-		// 	"standardized_name_q": fmt.Sprintf("%q", standardizedNameLoop),
-		// 	"board_ptr":         fmt.Sprintf("%p", bd),
-		// }).Debug("Board in checkBoards loop (before skip and cool-down check)")
-
-		// SkipNames check (bd.Name should be used here as it's expected to be standardized by creator)
+		// SkipNames check
 		if skipNames != nil {
-			_, shouldSkip := skipNames[bd.Name] // bd.Name is the standardized name
-			// log.WithFields(log.Fields{ // This log is NOW COMMENTED OUT
-			// 	"board_name_checked": bd.Name,
-			// 	"board_name_checked_q": fmt.Sprintf("%q", bd.Name),
-			// 	"found_in_skipNames": shouldSkip,
-			// }).Debug("skipNames check result")
-			if shouldSkip {
-				log.WithField("board", bd.Name).Debug("Skipping board as it was found in skipNames.")
+			if _, shouldSkip := skipNames[bd.Name]; shouldSkip {
+				// log.WithField("board", bd.Name).Debug("Skipping board as it was found in skipNames.") // This can be noisy if many are skipped. Retained for now.
 				continue
 			}
 		}
 
-		// --- Old Cool-down Logic Removed ---
+		// log.WithFields(log.Fields{ // Commented out: "Board passed skipName check..."
+		// 	"board_name": bd.Name,
+		// 	"board_ptr": fmt.Sprintf("%p", bd),
+		// }).Debug("Board passed skipName check, proceeding to start checkNewArticle goroutine.")
 
-		log.WithFields(log.Fields{ // Ensure this is Debug level
-			"board_name": bd.Name, 
-			"board_ptr": fmt.Sprintf("%p", bd),
-		}).Debug("Board passed skipName check, proceeding to start checkNewArticle goroutine.") // Message adjusted slightly for clarity
-
-		time.Sleep(duration) 
+		time.Sleep(duration)
 		go checkNewArticle(bd, boardCh)
 	}
 }
@@ -287,15 +246,14 @@ func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Updated Articles")
 		if err := bd.Save(); err == nil {
-			log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Sending board to boardCh")
+			// log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("Sending board to boardCh") // Commented out
 			boardCh <- bd
 		}
 	}
 }
 
 func checkKeywordSubscriber(bd *board.Board, cker Checker) {
-	// Note: cker.Profile.Account might be empty here if this is the first time for this cker instance
-	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_keywords": cker.Profile.Account}).Debug("checkKeywordSubscriber BEGIN")
+	// log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_keywords": cker.Profile.Account}).Debug("checkKeywordSubscriber BEGIN") // Commented out
 	u := models.User()
 	accounts := keyword.Subscribers(bd.Name)
 	for _, account := range accounts {
@@ -310,10 +268,10 @@ func checkKeywordSubscriber(bd *board.Board, cker Checker) {
 }
 
 func checkKeywordSubscription(user user.User, bd *board.Board, cker Checker) {
-	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkKeywordSubscription BEGIN")
+	// log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkKeywordSubscription BEGIN") // Commented out
 	for _, sub := range user.Subscribes {
 		standardizedSubBoard := strings.ToLower(strings.TrimSpace(sub.Board))
-		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_keywords": strings.Join(sub.Keywords, ",")}).Debug("Checking subscription rule")
+		// log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_keywords": strings.Join(sub.Keywords, ",")}).Debug("Checking subscription rule") // Commented out
 		if bd.Name == standardizedSubBoard { // bd.Name is already standardized
 			cker.board = bd.Name // Use standardized board name
 			for _, keyword := range sub.Keywords {
@@ -338,14 +296,13 @@ func checkKeyword(standardizedKeyword string, bd *board.Board, cker Checker) {
 		cker.articles = keywordArticles
 		cker.subType = "keyword"
 		cker.word = standardizedKeyword // Store standardized word
-		log.WithFields(log.Fields{"board": cker.board, "keyword": cker.keyword, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkKeyword")
+		// log.WithFields(log.Fields{"board": cker.board, "keyword": cker.keyword, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkKeyword") // Commented out
 		cker.ch <- cker
 	}
 }
 
 func checkAuthorSubscriber(bd *board.Board, cker Checker) {
-	// Note: cker.Profile.Account might be empty here
-	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_authors": cker.Profile.Account}).Debug("checkAuthorSubscriber BEGIN")
+	// log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd), "account_to_check_authors": cker.Profile.Account}).Debug("checkAuthorSubscriber BEGIN") // Commented out
 	u := models.User()
 	accounts := author.Subscribers(bd.Name)
 	for _, account := range accounts {
@@ -360,10 +317,10 @@ func checkAuthorSubscriber(bd *board.Board, cker Checker) {
 }
 
 func checkAuthorSubscription(user user.User, bd *board.Board, cker Checker) {
-	log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkAuthorSubscription BEGIN")
+	// log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name}).Debug("checkAuthorSubscription BEGIN") // Commented out
 	for _, sub := range user.Subscribes {
 		standardizedSubBoard := strings.ToLower(strings.TrimSpace(sub.Board))
-		log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_authors": strings.Join(sub.Authors, ",")}).Debug("Checking subscription rule")
+		// log.WithFields(log.Fields{"account": user.Profile.Account, "board_name": bd.Name, "original_sub_board": sub.Board, "standardized_sub_board": standardizedSubBoard, "sub_authors": strings.Join(sub.Authors, ",")}).Debug("Checking subscription rule") // Commented out
 		if bd.Name == standardizedSubBoard { // bd.Name is already standardized
 			cker.board = bd.Name // Use standardized board name
 			for _, author := range sub.Authors {
@@ -387,7 +344,7 @@ func checkAuthor(standardizedAuthor string, bd *board.Board, cker Checker) {
 		cker.articles = authorArticles
 		cker.subType = "author"
 		cker.word = standardizedAuthor // Store standardized word
-		log.WithFields(log.Fields{"board": cker.board, "author": cker.author, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkAuthor")
+		// log.WithFields(log.Fields{"board": cker.board, "author": cker.author, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkAuthor") // Commented out
 		cker.ch <- cker
 	}
 }

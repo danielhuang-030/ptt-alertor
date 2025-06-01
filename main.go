@@ -59,7 +59,7 @@ func basicAuth(handle httprouter.Handle) httprouter.Handle {
 }
 
 func main() {
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
 	log.Info("Start Jobs")
 	startJobs()
 
