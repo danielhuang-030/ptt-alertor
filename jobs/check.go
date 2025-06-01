@@ -43,8 +43,8 @@ func messageWorker(ckCh chan check) {
 			"word":            cr.word,
 			"articles_count":  len(cr.articles),
 			"profile_account": cr.Profile.Account,
-			"discord_ch_id":   cr.Profile.DiscordChannelID,
-		}).Info("Message worker received Checker from ckCh")
+			// "discord_ch_id":   cr.Profile.DiscordChannelID, // Removed for brevity at this stage
+		}).Debug("Message worker received Checker from ckCh") // Changed to Debug
 		sendMessage(ck) // Pass original 'ck'
 	}
 }
@@ -91,43 +91,36 @@ func sendMessage(c check) {
 	}
 	// If the key remains just the board name, cool-down is board-level.
 	// The goal is for the key to identify "the same batch of content" as precisely as possible.
-	log.WithFields(log.Fields{ // Log point 1
-		"calculated_notification_key": notificationKey,
-		"board":                       cr.board,
-		"sub_type":                    cr.subType,
-		"word":                        cr.word,
-	}).Debug("Notification key calculated for cool-down check.")
+	// log.WithFields(log.Fields{ // Commented out Log point 1
+	// 	"calculated_notification_key": notificationKey,
+	// 	"board":                       cr.board,
+	// 	"sub_type":                    cr.subType,
+	// 	"word":                        cr.word,
+	// }).Debug("Notification key calculated for cool-down check.")
 
-	log.WithField("notification_key_to_check", notificationKey).Debug("About to check cool-down status for notification key.")
-	
+	// log.WithField("notification_key_to_check", notificationKey).Debug("About to check cool-down status for notification key.") // Commented out Log point 2
+
 	recentlyNotifiedMutex.Lock() // Lock before read-check-write sequence
-	
+
 	lastNotifiedTime, found := recentlyNotifiedEvents[notificationKey]
 	currentTime := time.Now()
 	shouldSkipNotification := false
 
 	if found && currentTime.Sub(lastNotifiedTime) < notificationCoolDown {
 		// Still in cool-down period
-		log.WithFields(log.Fields{
-			"notification_key":        notificationKey,
-			"was_found_in_map":        true, // Must be true to be in this block
-			"time_since_last_notify":  currentTime.Sub(lastNotifiedTime).String(),
-			"last_notified_time_raw":  lastNotifiedTime.Format(time.RFC3339),
-			"cool_down_duration":      notificationCoolDown.String(),
-			"cool_down_active_for_key":true, // Condition for this block
-		}).Info("Notification for this key is in cool-down period, skipping all platform sends for this event.")
+		log.WithFields(log.Fields{ // Simplified Info log for skipping
+			"notification_key":   notificationKey,
+			"cool_down_duration": notificationCoolDown.String(),
+		}).Info("Notification for this key is in cool-down period, skipping.")
 		shouldSkipNotification = true
 	} else {
 		// Not in cool-down (or first time), allow send and update timestamp immediately
-		recentlyNotifiedEvents[notificationKey] = currentTime 
-		log.WithFields(log.Fields{
+		recentlyNotifiedEvents[notificationKey] = currentTime
+		log.WithFields(log.Fields{ // Simplified Debug log for proceeding
 			"notification_key":        notificationKey,
-			"was_found_in_map":        found, // Log if it was found (i.e., cool-down expired) or not (first time)
-			"previous_last_notified_time_raw": lastNotifiedTime.Format(time.RFC3339), // Log previous time, will be zero if !found
-			"cool_down_duration":      notificationCoolDown.String(),
-			"new_timestamp_set":       currentTime.Format(time.RFC3339), // Log the new timestamp being set
-			"cool_down_active_for_key":false, // Condition for this block (not actively cooling down)
-		}).Debug("Notification key NOT in cool-down. Updated timestamp to current time, proceeding with send.")
+			"was_found_in_map":        found,
+			"new_timestamp_set":       currentTime.Format(time.RFC3339),
+		}).Debug("Notification key NOT in cool-down. Updated timestamp, proceeding with send.")
 		// shouldSkipNotification remains false
 	}
 	recentlyNotifiedMutex.Unlock() // Unlock after read-check-write sequence
@@ -171,7 +164,7 @@ func sendMessage(c check) {
 			// if !article.Date.IsZero() { embed.Timestamp = article.Date.Format(time.RFC3339) }
 		} else { // Multiple articles
 			messageContent = fmt.Sprintf("看板 [%s] 有 %d 篇新文章符合您的訂閱 '%s'。", displayBoard, len(cr.articles), displayWord)
-			
+
 			embedDescription := "偵測到多篇相關文章：\n"
 			var fields []*discord.EmbedField
 
@@ -193,7 +186,7 @@ func sendMessage(c check) {
 					})
 				} else {
 					embedDescription += fmt.Sprintf("...還有 %d 篇更多文章未在下方列表中完全顯示。\n", len(cr.articles)-i)
-					break 
+					break
 				}
 			}
 
@@ -207,12 +200,12 @@ func sendMessage(c check) {
 		}
 	} else {
 		log.WithFields(log.Fields{
-			"notification_key": notificationKey, 
+			"notification_key": notificationKey,
 			"board": cr.board, "type": cr.subType, "word": cr.word,
 		}).Warn("sendMessage called with zero articles in Checker object, no Discord message will be sent.")
 		return // No articles, nothing to send for Discord (and likely other platforms)
 	}
-	
+
 	if len(messageContent) > 2000 { // Discord message content limit
 		messageContent = messageContent[:1997] + "..."
 	}
@@ -239,7 +232,7 @@ func sendMessage(c check) {
 			attemptLogFields["account"] = account
 		}
 		log.WithFields(attemptLogFields).Info("Attempting to send Discord notification via Bot")
-		
+
 		// Debug log before PushMessage (this part was already present and correct)
 		var msgSummary string
 		if len(messageContent) > 50 {
@@ -255,11 +248,11 @@ func sendMessage(c check) {
 			embTitle = "<nil_embed>" // Or some other placeholder if embed is nil
 		}
 
-		log.WithFields(log.Fields{
-			"target_discord_ch": cr.Profile.DiscordChannelID,
-			"message_summary":   msgSummary,
-			"embed_title":       embTitle,
-		}).Debug("Details before calling discord.PushMessage")
+		// log.WithFields(log.Fields{ // Commented out "Details before calling discord.PushMessage"
+		// 	"target_discord_ch": cr.Profile.DiscordChannelID,
+		// 	"message_summary":   msgSummary,
+		// 	"embed_title":       embTitle,
+		// }).Debug("Details before calling discord.PushMessage")
 
 		err := discord.PushMessage(cr.Profile.DiscordChannelID, messageContent, embed)
 		if err == nil {
@@ -343,13 +336,12 @@ func sendMessage(c check) {
 		}).Info("Message Sent")
 
 		// Timestamp was already updated IF this notification was allowed to proceed.
-		// No further timestamp update needed here. We just log that it was processed.
-		log.WithField("processed_notification_key", notificationKey).Debug("Notification sent (or attempted); cool-down was set at decision time.")
+		// log.WithField("processed_notification_key", notificationKey).Debug("Notification sent (or attempted); cool-down was set at decision time.") // Commented out
 	} else {
         log.WithFields(log.Fields{ // This log is fine, indicates no send attempt was successful.
 			"account":  account, "board": cr.board, "type": cr.subType, "word": cr.word,
-			"processed_notification_key": notificationKey, // Add key for context
-		}).Info("No notification platform was successfully notified or configured for user (cool-down may have been set if this was first attempt).")
+			// "processed_notification_key": notificationKey, // Can be removed if too noisy for an Info log when no platform sent
+		}).Info("No notification platform was successfully notified or configured for user.") // Simplified message slightly
     }
 }
 
