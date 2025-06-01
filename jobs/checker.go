@@ -234,7 +234,7 @@ func checkBoards(bds []*board.Board, duration time.Duration, skipNames map[strin
 }
 
 func checkNewArticle(bd *board.Board, boardCh chan *board.Board) {
-	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Info("checkNewArticle BEGIN")
+	log.WithFields(log.Fields{"board_name": bd.Name, "board_ptr": fmt.Sprintf("%p", bd)}).Debug("checkNewArticle BEGIN")
 	bd.WithNewArticles()
 	log.WithFields(log.Fields{"board_name": bd.Name, "new_articles_count": len(bd.NewArticles), "online_articles_count": len(bd.OnlineArticles)}).Debug("Articles status after WithNewArticles")
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
