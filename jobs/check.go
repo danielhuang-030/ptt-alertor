@@ -233,25 +233,13 @@ func sendMessage(c check) {
 		}
 		log.WithFields(attemptLogFields).Info("Attempting to send Discord notification via Bot")
 
-		// Debug log before PushMessage (this part was already present and correct)
-		var msgSummary string
-		if len(messageContent) > 50 {
-			msgSummary = messageContent[:50] + "..."
-		} else {
-			msgSummary = messageContent
-		}
-
-		var embTitle string
-		if embed != nil { // Ensure embed is not nil before accessing Title
-			embTitle = embed.Title
-		} else {
-			embTitle = "<nil_embed>" // Or some other placeholder if embed is nil
-		}
+		// Removed msgSummary and embTitle declaration and assignments as they are no longer used.
+		// The log that used them ("Details before calling discord.PushMessage") was previously commented out.
 
 		// log.WithFields(log.Fields{ // Commented out "Details before calling discord.PushMessage"
 		// 	"target_discord_ch": cr.Profile.DiscordChannelID,
-		// 	"message_summary":   msgSummary,
-		// 	"embed_title":       embTitle,
+		// 	"message_summary":   msgSummary, // msgSummary would be undefined here
+		// 	"embed_title":       embTitle,   // embTitle would be undefined here
 		// }).Debug("Details before calling discord.PushMessage")
 
 		err := discord.PushMessage(cr.Profile.DiscordChannelID, messageContent, embed)
