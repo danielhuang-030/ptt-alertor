@@ -1,10 +1,7 @@
 package discord
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 
 	"strings" // Added import
@@ -18,11 +15,9 @@ import (
 const discordAccountPrefix = "discord_channel:"
 
 var (
-	// discordWebhookURL is no longer the primary method. Kept for now if direct webhook sending is still needed somewhere.
-	discordWebhookURL string
-	discordBotToken   string
-	defaultChannelID  string
-	discordSession    *discordgo.Session
+	discordBotToken  string
+	defaultChannelID string
+	discordSession   *discordgo.Session
 )
 
 func init() {
@@ -92,16 +87,16 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	channelUser := models.User().Find(accountKeyForDB)
 	// A channel is listening if its specific, prefixed account record exists, is enabled, and type matches.
 	isChannelListening := channelUser.Enable &&
-	                      channelUser.Profile.Account == accountKeyForDB &&
-	                      channelUser.Profile.Type == "discord_channel"
+		channelUser.Profile.Account == accountKeyForDB &&
+		channelUser.Profile.Type == "discord_channel"
 
 	log.WithFields(log.Fields{
 		"channelID":             m.ChannelID,
 		"accountKeyInDB":        accountKeyForDB,
-		"retrievedRawAccount":   channelUser.Profile.Account,      // Log the Account field from DB
-		"retrievedEnableFlag":   channelUser.Enable,               // Log the Enable flag from DB
-		"retrievedProfileType":  channelUser.Profile.Type,         // Log the Type from DB
-		"isConsideredListening": isChannelListening,             // Log the derived listening state
+		"retrievedRawAccount":   channelUser.Profile.Account, // Log the Account field from DB
+		"retrievedEnableFlag":   channelUser.Enable,          // Log the Enable flag from DB
+		"retrievedProfileType":  channelUser.Profile.Type,    // Log the Type from DB
+		"isConsideredListening": isChannelListening,          // Log the derived listening state
 	}).Debug("Checked channel initial listening state")
 
 	var textToHandle string
@@ -129,81 +124,81 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// --- Special handling for listen/unlisten commands (these always require a mention) ---
 	if botMentioned && (strings.EqualFold(parsedMentionCommand, "監聽") || strings.EqualFold(parsedMentionCommand, "listen")) {
-            // 步驟1: 確保使用者記錄存在並獲取/更新初始狀態 (Enable 可能被設為 true)
-            if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
-                log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'listen' command.")
-                s.ChannelMessageSend(m.ChannelID, "處理監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
-                return // Stop processing
-            }
+		// 步驟1: 確保使用者記錄存在並獲取/更新初始狀態 (Enable 可能被設為 true)
+		if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
+			log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'listen' command.")
+			s.ChannelMessageSend(m.ChannelID, "處理監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
+			return // Stop processing
+		}
 
-            // 步驟2: 再次獲取最新的使用者物件，以確保我們操作的是 HandleDiscordFollow 更新後的狀態
-            currentChannelUser := models.User().Find(accountKeyForDB) // accountKeyForDB 應已在此函式作用域內定義 (discordAccountPrefix + m.ChannelID)
-            if currentChannelUser.Profile.Account != accountKeyForDB || currentChannelUser.Profile.Type != "discord_channel" {
-                 log.WithFields(log.Fields{
-                    "accountKeyInDB": accountKeyForDB,
-                    "foundProfileAccount": currentChannelUser.Profile.Account,
-                    "foundProfileType": currentChannelUser.Profile.Type,
-                 }).Error("Failed to verify channel user after HandleDiscordFollow for 'listen'.")
-                 s.ChannelMessageSend(m.ChannelID, "啟用服務時未能正確驗證頻道資訊，請再試一次。(正體中文)")
-                 return
-            }
-            
-            // 步驟3: 明確設定 Enable = true 並更新
-            currentChannelUser.Enable = true
-            if err := currentChannelUser.Update(); err != nil {
-                log.WithError(err).WithField("accountKeyInDB", accountKeyForDB).Error("Enable service failed on user.Update() for 'listen' in messageCreate.")
-                s.ChannelMessageSend(m.ChannelID, "啟用服務失敗，資料更新時發生錯誤，請稍後再試。(正體中文)")
-                return
-            }
-            
-            // 步驟4: 發送成功回應
-            s.ChannelMessageSend(m.ChannelID, "已啟用 PTT Alertor 服務於此頻道。我將會開始監聽並通知新訊息。(正體中文)")
-            
-            // 步驟5: 更新此函式範圍內的 isChannelListening 狀態
-            isChannelListening = true 
-            log.WithFields(log.Fields{"channelID": m.ChannelID, "parsedInput": parsedMentionCommand, "newState": isChannelListening}).Info("Successfully processed 'listen' command directly in messageCreate.")
-            
-            // 監聽指令處理完畢，不再交給後續的 executeCommand 流程
-            // executeCommand 保持/設為 false, textToHandle 也不用設
-            executeCommand = false // Explicitly set to false
-        } else if botMentioned && (strings.EqualFold(parsedMentionCommand, "取消監聽") || strings.EqualFold(parsedMentionCommand, "unlisten")) {
-            // 步驟1: 確保使用者記錄存在 (主要目的是獲取 User 物件，Enable 狀態會被後續明確設定)
-            if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
-                log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'unlisten' command.")
-                s.ChannelMessageSend(m.ChannelID, "處理取消監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
-                return // Stop processing
-            }
+		// 步驟2: 再次獲取最新的使用者物件，以確保我們操作的是 HandleDiscordFollow 更新後的狀態
+		currentChannelUser := models.User().Find(accountKeyForDB) // accountKeyForDB 應已在此函式作用域內定義 (discordAccountPrefix + m.ChannelID)
+		if currentChannelUser.Profile.Account != accountKeyForDB || currentChannelUser.Profile.Type != "discord_channel" {
+			log.WithFields(log.Fields{
+				"accountKeyInDB":      accountKeyForDB,
+				"foundProfileAccount": currentChannelUser.Profile.Account,
+				"foundProfileType":    currentChannelUser.Profile.Type,
+			}).Error("Failed to verify channel user after HandleDiscordFollow for 'listen'.")
+			s.ChannelMessageSend(m.ChannelID, "啟用服務時未能正確驗證頻道資訊，請再試一次。(正體中文)")
+			return
+		}
 
-            // 步驟2: 再次獲取最新的使用者物件
-            currentChannelUser := models.User().Find(accountKeyForDB) // accountKeyForDB 應已在此函式作用域內定義
-            if currentChannelUser.Profile.Account != accountKeyForDB || currentChannelUser.Profile.Type != "discord_channel" {
-                 log.WithFields(log.Fields{
-                    "accountKeyInDB": accountKeyForDB,
-                    "foundProfileAccount": currentChannelUser.Profile.Account,
-                    "foundProfileType": currentChannelUser.Profile.Type,
-                 }).Error("Failed to verify channel user after HandleDiscordFollow for 'unlisten'.")
-                 s.ChannelMessageSend(m.ChannelID, "停用服務時未能正確驗證頻道資訊，請再試一次。(正體中文)")
-                 return
-            }
+		// 步驟3: 明確設定 Enable = true 並更新
+		currentChannelUser.Enable = true
+		if err := currentChannelUser.Update(); err != nil {
+			log.WithError(err).WithField("accountKeyInDB", accountKeyForDB).Error("Enable service failed on user.Update() for 'listen' in messageCreate.")
+			s.ChannelMessageSend(m.ChannelID, "啟用服務失敗，資料更新時發生錯誤，請稍後再試。(正體中文)")
+			return
+		}
 
-            // 步驟3: 明確設定 Enable = false 並更新
-            currentChannelUser.Enable = false
-            if err := currentChannelUser.Update(); err != nil {
-                log.WithError(err).WithField("accountKeyInDB", accountKeyForDB).Error("Disable service failed on user.Update() for 'unlisten' in messageCreate.")
-                s.ChannelMessageSend(m.ChannelID, "停用服務失敗，資料更新時發生錯誤，請稍後再試。(正體中文)")
-                return
-            }
+		// 步驟4: 發送成功回應
+		s.ChannelMessageSend(m.ChannelID, "已啟用 PTT Alertor 服務於此頻道。我將會開始監聽並通知新訊息。(正體中文)")
 
-            // 步驟4: 發送成功回應
-            s.ChannelMessageSend(m.ChannelID, "已停用 PTT Alertor 服務於此頻道。我將不再監聽此頻道。(正體中文)")
-            
-            // 步驟5: 更新此函式範圍內的 isChannelListening 狀態
-            isChannelListening = false
-            log.WithFields(log.Fields{"channelID": m.ChannelID, "parsedInput": parsedMentionCommand, "newState": isChannelListening}).Info("Successfully processed 'unlisten' command directly in messageCreate.")
-            
-            // 取消監聽指令處理完畢
-            executeCommand = false // Explicitly set to false
-        } else { // Not a listen/unlisten command, proceed with state-based logic
+		// 步驟5: 更新此函式範圍內的 isChannelListening 狀態
+		isChannelListening = true
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "parsedInput": parsedMentionCommand, "newState": isChannelListening}).Info("Successfully processed 'listen' command directly in messageCreate.")
+
+		// 監聽指令處理完畢，不再交給後續的 executeCommand 流程
+		// executeCommand 保持/設為 false, textToHandle 也不用設
+		executeCommand = false // Explicitly set to false
+	} else if botMentioned && (strings.EqualFold(parsedMentionCommand, "取消監聽") || strings.EqualFold(parsedMentionCommand, "unlisten")) {
+		// 步驟1: 確保使用者記錄存在 (主要目的是獲取 User 物件，Enable 狀態會被後續明確設定)
+		if err := command.HandleDiscordFollow(m.GuildID, m.ChannelID, m.ChannelID); err != nil {
+			log.WithError(err).WithFields(log.Fields{"channelID": m.ChannelID, "command": parsedMentionCommand}).Error("Error in HandleDiscordFollow for 'unlisten' command.")
+			s.ChannelMessageSend(m.ChannelID, "處理取消監聽指令時發生內部錯誤，請稍後再試。(正體中文)")
+			return // Stop processing
+		}
+
+		// 步驟2: 再次獲取最新的使用者物件
+		currentChannelUser := models.User().Find(accountKeyForDB) // accountKeyForDB 應已在此函式作用域內定義
+		if currentChannelUser.Profile.Account != accountKeyForDB || currentChannelUser.Profile.Type != "discord_channel" {
+			log.WithFields(log.Fields{
+				"accountKeyInDB":      accountKeyForDB,
+				"foundProfileAccount": currentChannelUser.Profile.Account,
+				"foundProfileType":    currentChannelUser.Profile.Type,
+			}).Error("Failed to verify channel user after HandleDiscordFollow for 'unlisten'.")
+			s.ChannelMessageSend(m.ChannelID, "停用服務時未能正確驗證頻道資訊，請再試一次。(正體中文)")
+			return
+		}
+
+		// 步驟3: 明確設定 Enable = false 並更新
+		currentChannelUser.Enable = false
+		if err := currentChannelUser.Update(); err != nil {
+			log.WithError(err).WithField("accountKeyInDB", accountKeyForDB).Error("Disable service failed on user.Update() for 'unlisten' in messageCreate.")
+			s.ChannelMessageSend(m.ChannelID, "停用服務失敗，資料更新時發生錯誤，請稍後再試。(正體中文)")
+			return
+		}
+
+		// 步驟4: 發送成功回應
+		s.ChannelMessageSend(m.ChannelID, "已停用 PTT Alertor 服務於此頻道。我將不再監聽此頻道。(正體中文)")
+
+		// 步驟5: 更新此函式範圍內的 isChannelListening 狀態
+		isChannelListening = false
+		log.WithFields(log.Fields{"channelID": m.ChannelID, "parsedInput": parsedMentionCommand, "newState": isChannelListening}).Info("Successfully processed 'unlisten' command directly in messageCreate.")
+
+		// 取消監聽指令處理完畢
+		executeCommand = false // Explicitly set to false
+	} else { // Not a listen/unlisten command, proceed with state-based logic
 		if isChannelListening {
 			potentialDirectCommand := strings.TrimSpace(m.Content)
 			// Use command.IsKnownCommand to check if it's a command users can type directly
@@ -246,14 +241,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// --- Actual command execution ---
 	if executeCommand && textToHandle != "" {
 		log.WithFields(log.Fields{
-			"channelID": m.ChannelID, 
-			"accountKeyForDB": accountKeyForDB, // Log the ID being sent to HandleCommand
-			"textToHandle": textToHandle, 
+			"channelID":             m.ChannelID,
+			"accountKeyForDB":       accountKeyForDB, // Log the ID being sent to HandleCommand
+			"textToHandle":          textToHandle,
 			"isChannelListeningNow": isChannelListening, // Log listening state at the time of execution
 		}).Info("Preparing to execute command.")
-		
+
 		// IMPORTANT: Pass accountKeyForDB (prefixed ID) to HandleCommand as the userID argument
-		responseText := command.HandleCommand(textToHandle, accountKeyForDB, true) 
+		responseText := command.HandleCommand(textToHandle, accountKeyForDB, true)
 
 		if responseText != "" {
 			_, err := s.ChannelMessageSend(m.ChannelID, responseText)
@@ -263,10 +258,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	} else {
 		log.WithFields(log.Fields{
-			"channelID": m.ChannelID, 
-			"executeCommandFlag": executeCommand, 
-			"textToHandle": textToHandle, 
-			"originalContent": m.Content,
+			"channelID":          m.ChannelID,
+			"executeCommandFlag": executeCommand,
+			"textToHandle":       textToHandle,
+			"originalContent":    m.Content,
 		}).Debug("No command executed or no text to handle for final processing.")
 	}
 }
@@ -370,46 +365,6 @@ func toDiscordgoEmbed(embed *Embed) *discordgo.MessageEmbed {
 	}
 
 	return dgEmbed
-}
-
-// SendWebhookMessage sends a message with an optional embed to a Discord webhook URL.
-// It directly uses the custom Embed struct for JSON serialization.
-func SendWebhookMessage(webhookURL string, message string, embed *Embed) error {
-	if webhookURL == "" {
-		return fmt.Errorf("Discord webhook URL is empty")
-	}
-
-	payload := make(map[string]interface{})
-	payload["content"] = message
-	if embed != nil {
-		// Discord webhooks expect an array of embeds.
-		payload["embeds"] = []*Embed{embed}
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord webhook payload: %w", err)
-	}
-
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(body))
-	if err != nil {
-		return fmt.Errorf("failed to send Discord webhook message: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var responseBody bytes.Buffer
-		// Attempt to read the response body for more detailed error information.
-		_, readErr := responseBody.ReadFrom(resp.Body)
-		if readErr != nil {
-			// If reading the response body fails, return the original status code error along with the read error.
-			return fmt.Errorf("Discord webhook returned status %d (and failed to read response body: %v)", resp.StatusCode, readErr)
-		}
-		// Return the status code error along with the response body.
-		return fmt.Errorf("Discord webhook returned status %d. Response: %s", resp.StatusCode, responseBody.String())
-	}
-
-	return nil
 }
 
 // PushMessage sends a message with an optional embed to a specific Discord channel using the initialized bot session.
