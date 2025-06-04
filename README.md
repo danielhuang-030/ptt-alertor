@@ -193,9 +193,6 @@ Ptt-Alertor 目前支援透過以下頻道接收 PTT 文章通知：
         5.  在該頻道上按右鍵，選擇「複製 ID」(Copy ID)。此 ID 即為 `DISCORD_CHANNEL_ID`。
     *   **範例**: `DISCORD_CHANNEL_ID=您的頻道ID字串`
 
-3.  **(可選) `DISCORD_WEBHOOK_URL`**:
-    *   **說明**: 如果您希望透過特定的 Discord Webhook URL 發送某些通知（這是一種較簡單、單向的訊息推送方式，獨立於 Bot Token 的運作），可以設定此變數。如果主要使用 Bot 的雙向互動功能，則此變數通常不需要設定。
-    *   **範例**: `DISCORD_WEBHOOK_URL=您的Webhook網址`
 
 #### Bot 互動與指令
 
@@ -205,6 +202,10 @@ Ptt-Alertor 目前支援透過以下頻道接收 PTT 文章通知：
 
 *   `指令`：Bot 會回覆可用的指令清單。
 *   `清單`：Bot 會回覆您目前設定的看板、關鍵字及作者追蹤清單。
+
+## 開發與測試
+
+執行 `go test ./...` 會自動下載所需的 Go modules。若環境無法存取 Go module proxy 或網際網路，測試將無法通過。
 
 ## Credits
 
