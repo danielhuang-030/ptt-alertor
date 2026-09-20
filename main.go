@@ -157,13 +157,14 @@ func startJobs() {
 		sched := jobs.NewScheduler(cfg, idx.HasAny, idx.SubscribedBoards)
 		// Thin PTT monitor: Pause/Resume only — never relaunches classic checkers.
 		go jobs.RunSchedulerPttMonitor(sched)
+		// Warm comment target index before scheduler Start so first follow-ups see targets.
+		jobs.CommentTargets().Refresh()
 		go sched.Start(context.Background())
 		go func() {
 			t := time.NewTicker(cfg.IdlePoll)
 			defer t.Stop()
 			// Refresh SubIndex + comment targets on IdlePoll only (never Active hot path KEYS).
 			// Keeps HasAny/boards fresh (Active→Idle after last unsubscribe; new boards appear).
-			jobs.CommentTargets().Refresh()
 			for range t.C {
 				idx.Refresh()
 				jobs.CommentTargets().Refresh()

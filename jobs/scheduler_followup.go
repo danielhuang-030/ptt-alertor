@@ -6,7 +6,6 @@ import (
 	log "github.com/Ptt-Alertor/logrus"
 
 	"github.com/Ptt-Alertor/ptt-alertor/models"
-	"github.com/Ptt-Alertor/ptt-alertor/models/article"
 	"github.com/Ptt-Alertor/ptt-alertor/models/pushsum"
 )
 
@@ -61,13 +60,9 @@ func checkCommentBoard(board string) {
 		if a.Code == "" || a.Board == "" || !strings.EqualFold(a.Board, name) {
 			continue
 		}
-		ach := make(chan article.Article, 1)
-		cc.checkComments(code, ach)
-		select {
-		case art := <-ach:
+		if art, ok := cc.checkCommentsOnce(code); ok {
 			cc.Article = art
 			cc.checkSubscribers()
-		default:
 		}
 	}
 }

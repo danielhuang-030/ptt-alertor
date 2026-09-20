@@ -82,10 +82,12 @@ func (cc commentChecker) Run() {
 	}
 }
 
-func (cc commentChecker) checkComments(code string, ach chan article.Article) {
+// checkCommentsOnce contains the comment-check logic and returns (art, true) when
+// there are new comments to notify. Used by the scheduler path without channels.
+func (cc commentChecker) checkCommentsOnce(code string) (article.Article, bool) {
 	a := models.Article().Find(code)
 	if a.Board == "" || a.Code == "" {
-		return
+		return article.Article{}, false
 	}
 	new, err := web.FetchArticle(a.Board, a.Code)
 	if _, ok := err.(web.URLNotFoundError); ok {
@@ -108,7 +110,14 @@ func (cc commentChecker) checkComments(code string, ach chan article.Article) {
 			"board": a.Board,
 			"code":  a.Code,
 		}).Info("Updated Comments")
-		ach <- a
+		return a, true
+	}
+	return article.Article{}, false
+}
+
+func (cc commentChecker) checkComments(code string, ach chan article.Article) {
+	if art, ok := cc.checkCommentsOnce(code); ok {
+		ach <- art
 	}
 }
 
