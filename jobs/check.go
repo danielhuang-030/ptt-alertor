@@ -26,6 +26,9 @@ func enqueueCheck(c check) {
 	ckCh <- c
 }
 
+// enqueueCheckFn is the notify sink; tests may swap it to spy on matches.
+var enqueueCheckFn = enqueueCheck
+
 var (
 	recentlyNotifiedEvents = make(map[string]time.Time)
 	recentlyNotifiedMutex  = &sync.Mutex{}
