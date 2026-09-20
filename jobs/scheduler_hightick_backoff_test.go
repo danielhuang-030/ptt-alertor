@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -88,5 +89,49 @@ func TestHighTickConfigIsFiveSecondsWhenActiveLonger(t *testing.T) {
 	cfg := LoadSchedulerConfig()
 	if cfg.HighTick != 5*time.Second {
 		t.Fatalf("HighTick=%v want 5s when ActiveTick=10s", cfg.HighTick)
+	}
+}
+
+func TestRefreshErrorViaWorkerArmsBackoff(t *testing.T) {
+	s := NewScheduler(SchedulerConfig{
+		ActiveTick: time.Second,
+		HighTick:   time.Second,
+		Workers:    1,
+		QueueSize:  8,
+		IdlePoll:   time.Hour, // avoid ticker noise
+	}, func() bool { return true }, func() []string { return []string{"gossiping"} })
+	s.SetRefresher(failRefresher{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		fail := s.refreshFail
+		s.mu.Unlock()
+		if fail >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	s.Stop()
+
+	s.mu.Lock()
+	fail := s.refreshFail
+	until, ok := s.nextAllowed["gossiping"]
+	s.mu.Unlock()
+	if fail < 1 {
+		t.Fatal("refreshFail not incremented")
+	}
+	if !ok || until.IsZero() {
+		t.Fatal("nextAllowed not armed after refresh error")
+	}
+
+	// Within backoff window: TickOnce must skip.
+	s.TickOnce(time.Now())
+	if s.QueueLen() != 0 {
+		t.Fatalf("should skip during backoff after worker failure, queue=%d", s.QueueLen())
 	}
 }

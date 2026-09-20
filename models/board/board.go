@@ -96,17 +96,33 @@ func (bd *Board) WithArticles() {
 }
 
 func (bd *Board) WithNewArticles() {
+	_ = bd.WithNewArticlesErr()
+}
+
+// WithNewArticlesErr is like WithNewArticles but returns fetch errors so callers
+// (e.g. scheduler refresh) can arm backoff instead of treating empty as success.
+func (bd *Board) WithNewArticlesErr() error {
 	bd.mu.Lock()
 	defer bd.mu.Unlock()
-	bd.NewArticles, bd.OnlineArticles = newArticles(*bd)
+	var err error
+	bd.NewArticles, bd.OnlineArticles, err = newArticlesErr(*bd)
+	return err
 }
 
 func newArticles(bd Board) (newArticles, onlineArticles article.Articles) {
+	n, o, _ := newArticlesErr(bd)
+	return n, o
+}
+
+func newArticlesErr(bd Board) (newArticles, onlineArticles article.Articles, err error) {
 	newArticles = make(article.Articles, 0)
 	savedArticles := bd.driver.GetArticles(bd.Name)
-	onlineArticles = bd.FetchArticles()
+	onlineArticles, err = bd.FetchArticlesErr()
+	if err != nil {
+		return newArticles, onlineArticles, err
+	}
 	if len(savedArticles) == 0 {
-		return nil, onlineArticles
+		return nil, onlineArticles, nil
 	}
 	for _, onlineArticle := range onlineArticles {
 		for index, savedArticle := range savedArticles {
@@ -118,29 +134,40 @@ func newArticles(bd Board) (newArticles, onlineArticles article.Articles) {
 			}
 		}
 	}
-	return newArticles, onlineArticles
+	return newArticles, onlineArticles, nil
 }
 
+// FetchArticles keeps the legacy swallow-errors signature for Fetcher / classic checker.
 func (bd Board) FetchArticles() (articles article.Articles) {
+	articles, _ = bd.FetchArticlesErr()
+	return articles
+}
+
+// FetchArticlesErr returns an error when RSS hits ErrTooManyRequests, or when both
+// RSS and HTML crawlers fail. Success (including empty board) returns nil error.
+func (bd Board) FetchArticlesErr() (articles article.Articles, err error) {
 	if bd.Name == "" {
-		return
+		return nil, nil
 	}
-	articles, err := rss.BuildArticles(bd.Name)
+	articles, err = rss.BuildArticles(bd.Name)
 	if err != nil {
 		if err == rss.ErrTooManyRequests {
 			log.WithError(err).Warning("RSS Parse Failed")
-			return
+			return nil, err
 		}
 		log.WithField("board", bd.Name).WithError(err).Error("RSS Parse Failed, Switch to HTML Crawler")
-		articles, err = web.FetchArticles(bd.Name, -1)
-		if err != nil {
-			log.WithField("board", bd.Name).WithError(err).Error("HTML Parse Failed")
+		var htmlErr error
+		articles, htmlErr = web.FetchArticles(bd.Name, -1)
+		if htmlErr != nil {
+			log.WithField("board", bd.Name).WithError(htmlErr).Error("HTML Parse Failed")
+			return nil, htmlErr
 		}
+		err = nil
 	}
 	if strings.EqualFold(bd.Name, "allpost") {
 		fixLink(&articles)
 	}
-	return articles
+	return articles, nil
 }
 
 func fixLink(articles *article.Articles) {

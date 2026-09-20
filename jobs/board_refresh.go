@@ -9,6 +9,7 @@ import (
 )
 
 // refreshBoardAndNotify fetches a board and runs keyword/author matching into enqueueCheck.
+// Fetch failures (rate-limit or RSS+HTML both down) return error so the scheduler can backoff.
 func refreshBoardAndNotify(boardName string) error {
 	name := strings.ToLower(strings.TrimSpace(boardName))
 	if name == "" {
@@ -16,7 +17,9 @@ func refreshBoardAndNotify(boardName string) error {
 	}
 	bd := models.Board()
 	bd.Name = name
-	bd.WithNewArticles()
+	if err := bd.WithNewArticlesErr(); err != nil {
+		return err
+	}
 	if bd.NewArticles == nil && len(bd.OnlineArticles) > 0 {
 		bd.Articles = bd.OnlineArticles
 		log.WithField("board", bd.Name).Info("Created Articles")
