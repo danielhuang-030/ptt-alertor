@@ -86,6 +86,7 @@ func TestHighTickConfigIsFiveSecondsWhenActiveLonger(t *testing.T) {
 	t.Setenv("SCHED_QUEUE_SIZE", "")
 	t.Setenv("SCHED_LEGACY", "")
 	t.Setenv("BOARD_HIGH", "gossiping")
+	t.Setenv("SCHED_HIGH_TICK", "")
 	cfg := LoadSchedulerConfig()
 	if cfg.HighTick != 5*time.Second {
 		t.Fatalf("HighTick=%v want 5s when ActiveTick=10s", cfg.HighTick)

@@ -12,6 +12,7 @@ func TestLoadSchedulerConfigDefaults(t *testing.T) {
 	t.Setenv("SCHED_QUEUE_SIZE", "")
 	t.Setenv("SCHED_LEGACY", "")
 	t.Setenv("BOARD_HIGH", "")
+	t.Setenv("SCHED_HIGH_TICK", "")
 	cfg := LoadSchedulerConfig()
 	if cfg.IdlePoll < 30*time.Second || cfg.IdlePoll > 60*time.Second {
 		t.Fatalf("IdlePoll default out of range: %v", cfg.IdlePoll)
@@ -34,6 +35,7 @@ func TestLoadSchedulerConfigOverrides(t *testing.T) {
 	t.Setenv("SCHED_QUEUE_SIZE", "128")
 	t.Setenv("SCHED_LEGACY", "1")
 	t.Setenv("BOARD_HIGH", " Gossiping , LoL ")
+	t.Setenv("SCHED_HIGH_TICK", "")
 	cfg := LoadSchedulerConfig()
 	if cfg.IdlePoll != 45*time.Second {
 		t.Fatalf("IdlePoll=%v", cfg.IdlePoll)
@@ -55,5 +57,24 @@ func TestLoadSchedulerConfigOverrides(t *testing.T) {
 	}
 	if cfg.HighTick != 5*time.Second {
 		t.Fatalf("HighTick=%v want 5s (faster than ActiveTick 8s)", cfg.HighTick)
+	}
+}
+
+func TestLoadSchedulerConfigHighTickOverride(t *testing.T) {
+	t.Setenv("SCHED_IDLE_POLL", "")
+	t.Setenv("SCHED_ACTIVE_TICK", "10s")
+	t.Setenv("SCHED_WORKERS", "")
+	t.Setenv("SCHED_QUEUE_SIZE", "")
+	t.Setenv("SCHED_LEGACY", "")
+	t.Setenv("BOARD_HIGH", "gossiping")
+	t.Setenv("SCHED_HIGH_TICK", "8s")
+	cfg := LoadSchedulerConfig()
+	if cfg.HighTick != 8*time.Second {
+		t.Fatalf("HighTick=%v want 8s", cfg.HighTick)
+	}
+	t.Setenv("SCHED_HIGH_TICK", "2s") // below floor
+	cfg = LoadSchedulerConfig()
+	if cfg.HighTick != 5*time.Second {
+		t.Fatalf("HighTick=%v want 5s floor", cfg.HighTick)
 	}
 }

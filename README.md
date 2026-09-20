@@ -227,11 +227,29 @@ Mr.clu, Woqeker
 
 | 變數 | 說明 | 預設 |
 |------|------|------|
-| `SCHED_IDLE_POLL` | Idle 時檢查訂閱的間隔 | `30s` |
-| `SCHED_ACTIVE_TICK` | 有訂閱時刷新週期 | `5s` |
+| `SCHED_IDLE_POLL` | Idle 時檢查訂閱／重建索引的間隔 | `30s` |
+| `SCHED_ACTIVE_TICK` | 一般看板刷新週期（Active） | `5s` |
+| `SCHED_HIGH_TICK` | 高優先看板 tick（下限 5s） | `5s` |
+| `BOARD_HIGH` | 高優先看板清單（逗號分隔，小寫化） | （空） |
 | `SCHED_WORKERS` | worker 數 | `2` |
 | `SCHED_QUEUE_SIZE` | 佇列容量 | `256` |
 | `SCHED_LEGACY` | `1` 時改回舊 Checker 迴圈 | `0` |
 | `RUN_ONESHOT_JOBS` | `1` 時才跑啟動遷移／清理／Fetcher | `0` |
+
+### HighTick / BOARD_HIGH
+
+- `BOARD_HIGH=gossiping,lol` 可讓熱門看板以 `SCHED_HIGH_TICK`（預設／下限 5s）節奏入佇列；一般看板仍跟 `SCHED_ACTIVE_TICK`。
+- Active 時 tick loop 以 HighTick 為 ticker 週期，各看板再由 `lastEnqueued` + 各自 interval 閘控。
+
+### IdlePoll 索引（技術債說明）
+
+- `SubIndex.Refresh` / `CommentTargetIndex.Refresh` 僅在 IdlePoll 執行（可能 `KEYS user:*` / `KEYS article:*:subs`）。
+- Active 熱路徑（TickOnce、board refresh、comment follow-up）**不得**再呼叫 `User.All()` 或 `Articles.List()`。
+
+### Idle 驗收清單
+
+1. `docker stats`：Idle 時 CPU／網路明顯低於舊 Checker 空轉。
+2. Redis：Idle 期間 `KEYS` 僅約每 `SCHED_IDLE_POLL` 一次（非每秒）。
+3. `GET /boards` 回 200，服務可正常回應。
 
 設計與計劃見 `docs/superpowers/specs/`、`docs/superpowers/plans/`。

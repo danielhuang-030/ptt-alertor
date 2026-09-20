@@ -62,12 +62,15 @@ func LoadSchedulerConfig() SchedulerConfig {
 		}
 	}
 
-	// HighTick defaults to 5s floor so high boards can tick faster than a longer ActiveTick.
-	minHigh := 5 * time.Second
-	cfg.HighTick = minHigh
-	if cfg.ActiveTick > 0 && cfg.ActiveTick < minHigh {
-		// Keep floor at 5s even if ActiveTick were misconfigured below it.
-		cfg.HighTick = minHigh
+	// HighTick: 5s floor so high boards can tick faster than a longer ActiveTick.
+	cfg.HighTick = 5 * time.Second
+	if v := strings.TrimSpace(os.Getenv("SCHED_HIGH_TICK")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			if d < 5*time.Second {
+				d = 5 * time.Second
+			}
+			cfg.HighTick = d
+		}
 	}
 
 	return cfg

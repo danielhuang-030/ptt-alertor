@@ -6,8 +6,9 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/models"
 )
 
-// BuildSubIndexFromUsers scans users once (may use KEYS internally) and caches boards.
-// Call Refresh on IdlePoll in both Idle and Active — not on every Active board tick.
+// BuildSubIndexFromUsers scans users once (User.All may KEYS user:* — IdlePoll tech debt)
+// and caches boards in memory. Call Refresh on IdlePoll in both Idle and Active —
+// never from Active TickOnce / board refresh hot path.
 func BuildSubIndexFromUsers() *redisSubIndex {
 	idx := NewRedisSubIndex(loadSubsFromUsers)
 	idx.Refresh()
