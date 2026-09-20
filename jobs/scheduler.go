@@ -36,7 +36,8 @@ type Scheduler struct {
 	highSet       map[string]struct{}
 	refreshOK     int
 	refreshFail   int
-	obsCounter    int
+	dropDup       int
+	dropFull      int
 }
 
 // NewScheduler builds a scheduler with injectable subscription probes.
@@ -153,8 +154,19 @@ func (s *Scheduler) noteRefreshSuccess(board string) {
 	delete(s.nextAllowed, board)
 }
 
-func (s *Scheduler) observabilitySnapshot() (state SchedulerState, qlen, boards, ok, fail int) {
+func (s *Scheduler) observabilitySnapshot() (state SchedulerState, qlen, boards, ok, fail, dropDup, dropFull int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state, s.queue.Len(), len(s.boards()), s.refreshOK, s.refreshFail
+	return s.state, s.queue.Len(), len(s.boards()), s.refreshOK, s.refreshFail, s.dropDup, s.dropFull
+}
+
+func (s *Scheduler) noteEnqueueDrop(st EnqueueStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch st {
+	case EnqueueDuplicate:
+		s.dropDup++
+	case EnqueueFull:
+		s.dropFull++
+	}
 }

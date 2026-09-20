@@ -86,8 +86,10 @@ func (s *Scheduler) enqueueWork(item WorkItem) EnqueueStatus {
 	st := s.queue.TryEnqueue(item)
 	switch st {
 	case EnqueueDuplicate:
+		s.noteEnqueueDrop(st)
 		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Debug("work queue drop: duplicate")
 	case EnqueueFull:
+		s.noteEnqueueDrop(st)
 		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Warn("work queue drop: full")
 	case EnqueueInvalid:
 		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Debug("work queue drop: invalid")

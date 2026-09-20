@@ -105,10 +105,16 @@ func (s *Scheduler) workerLoop(ctx context.Context) {
 }
 
 func (s *Scheduler) handleItem(item WorkItem) {
+	start := time.Now()
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.WithField("board", item.Board).Errorf("scheduler work panic: %v", rec)
 		}
+		log.WithFields(log.Fields{
+			"board":   item.Board,
+			"kind":    item.Kind,
+			"work_ms": time.Since(start).Milliseconds(),
+		}).Info("scheduler work")
 	}()
 	switch item.Kind {
 	case WorkRefreshBoard:
@@ -143,24 +149,7 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 		high = 5 * time.Second
 	}
 	// Cold start: tick immediately so Active boards do not wait a full IdlePoll.
-	s.mu.Lock()
-	paused := s.paused
-	s.obsCounter++
-	obsN := s.obsCounter
-	s.mu.Unlock()
-	if !paused {
-		s.TickOnce(time.Now())
-		state, qlen, boards, ok, fail := s.observabilitySnapshot()
-		if obsN%1 == 0 {
-			log.WithFields(log.Fields{
-				"state":        state,
-				"queue":        qlen,
-				"boards":       boards,
-				"refresh_ok":   ok,
-				"refresh_fail": fail,
-			}).Info("scheduler tick")
-		}
-	}
+	s.runTick(time.Now())
 	period := idle
 	if s.State() == StateActive {
 		period = high
@@ -176,23 +165,11 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 		case now := <-ticker.C:
 			s.mu.Lock()
 			paused := s.paused
-			s.obsCounter++
-			obsN := s.obsCounter
 			s.mu.Unlock()
 			if paused {
 				continue
 			}
-			s.TickOnce(now)
-			state, qlen, boards, ok, fail := s.observabilitySnapshot()
-			if obsN%1 == 0 {
-				log.WithFields(log.Fields{
-					"state":        state,
-					"queue":        qlen,
-					"boards":       boards,
-					"refresh_ok":   ok,
-					"refresh_fail": fail,
-				}).Info("scheduler tick")
-			}
+			s.runTick(now)
 			if s.State() == StateIdle {
 				ticker.Reset(idle)
 			} else {
@@ -200,4 +177,20 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (s *Scheduler) runTick(now time.Time) {
+	start := time.Now()
+	s.TickOnce(now)
+	state, qlen, boards, ok, fail, dropDup, dropFull := s.observabilitySnapshot()
+	log.WithFields(log.Fields{
+		"state":        state,
+		"queue":        qlen,
+		"boards":       boards,
+		"refresh_ok":   ok,
+		"refresh_fail": fail,
+		"drop_dup":     dropDup,
+		"drop_full":    dropFull,
+		"tick_ms":      time.Since(start).Milliseconds(),
+	}).Info("scheduler tick")
 }
