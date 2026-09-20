@@ -155,8 +155,8 @@ func startJobs() {
 		log.Info("Starting resource-saving scheduler")
 		idx := jobs.BuildSubIndexFromUsers()
 		sched := jobs.NewScheduler(cfg, idx.HasAny, idx.SubscribedBoards)
-		// Ruling: do not start classic PttMonitor here — it would re-launch Checker on recovery.
-		// Scheduler.Pause/Resume exist for a future monitor adapter.
+		// Thin PTT monitor: Pause/Resume only — never relaunches classic checkers.
+		go jobs.RunSchedulerPttMonitor(sched)
 		go sched.Start(context.Background())
 		go func() {
 			t := time.NewTicker(cfg.IdlePoll)
