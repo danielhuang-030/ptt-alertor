@@ -123,14 +123,18 @@ func (s *Scheduler) TickOnce(now time.Time) {
 		last := s.lastEnqueued[name]
 		interval := s.boardInterval(name)
 		due := last.IsZero() || !last.Add(interval).After(now)
-		if due {
-			s.lastEnqueued[name] = now
-		}
 		s.mu.Unlock()
 		if !due {
 			continue
 		}
-		s.enqueueWork(WorkItem{Kind: WorkRefreshBoard, Board: name})
+		st := s.enqueueWork(WorkItem{Kind: WorkRefreshBoard, Board: name})
+		// Stamp only after a successful accept (or duplicate while still pending).
+		// EnqueueFull must not advance lastEnqueued or the board starves a full interval.
+		if st == EnqueueOK || st == EnqueueDuplicate {
+			s.mu.Lock()
+			s.lastEnqueued[name] = now
+			s.mu.Unlock()
+		}
 	}
 }
 

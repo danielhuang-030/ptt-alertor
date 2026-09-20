@@ -135,20 +135,39 @@ func (s *Scheduler) handleItem(item WorkItem) {
 func (s *Scheduler) tickLoop(ctx context.Context) {
 	defer s.wg.Done()
 	idle := s.cfg.IdlePoll
-	active := s.cfg.ActiveTick
 	high := s.cfg.HighTick
 	if idle < time.Second {
 		idle = 30 * time.Second
 	}
-	if active < time.Second {
-		active = 5 * time.Second
-	}
 	if high < time.Second {
 		high = 5 * time.Second
 	}
+	// Cold start: tick immediately so Active boards do not wait a full IdlePoll.
+	s.mu.Lock()
+	paused := s.paused
+	s.obsCounter++
+	obsN := s.obsCounter
+	s.mu.Unlock()
+	if !paused {
+		s.TickOnce(time.Now())
+		state, qlen, boards, ok, fail := s.observabilitySnapshot()
+		if obsN%1 == 0 {
+			log.WithFields(log.Fields{
+				"state":        state,
+				"queue":        qlen,
+				"boards":       boards,
+				"refresh_ok":   ok,
+				"refresh_fail": fail,
+			}).Info("scheduler tick")
+		}
+	}
+	period := idle
+	if s.State() == StateActive {
+		period = high
+	}
 	// Use HighTick as Active cadence so high boards can enqueue on their interval;
 	// TickOnce gates each board via lastEnqueued + HighTick/ActiveTick.
-	ticker := time.NewTicker(idle)
+	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 	for {
 		select {
@@ -164,7 +183,6 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 				continue
 			}
 			s.TickOnce(now)
-			// I4: lightweight periodic Info (every tick is fine — IdlePoll/HighTick paced).
 			state, qlen, boards, ok, fail := s.observabilitySnapshot()
 			if obsN%1 == 0 {
 				log.WithFields(log.Fields{
