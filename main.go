@@ -161,10 +161,12 @@ func startJobs() {
 		go func() {
 			t := time.NewTicker(cfg.IdlePoll)
 			defer t.Stop()
-			// Refresh in both Idle and Active so HasAny/boards stay fresh
-			// (Active→Idle after last unsubscribe; new boards appear without waiting).
+			// Refresh SubIndex + comment targets on IdlePoll only (never Active hot path KEYS).
+			// Keeps HasAny/boards fresh (Active→Idle after last unsubscribe; new boards appear).
+			jobs.CommentTargets().Refresh()
 			for range t.C {
 				idx.Refresh()
+				jobs.CommentTargets().Refresh()
 			}
 		}()
 	}

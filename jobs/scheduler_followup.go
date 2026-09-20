@@ -28,20 +28,7 @@ func defaultBoardHasPushSum(board string) bool {
 }
 
 func defaultBoardHasCommentTargets(board string) bool {
-	name := strings.ToLower(strings.TrimSpace(board))
-	if name == "" {
-		return false
-	}
-	for _, code := range new(article.Articles).List() {
-		a := models.Article().Find(code)
-		if a.Code == "" || a.Board == "" {
-			continue
-		}
-		if strings.EqualFold(a.Board, name) {
-			return true
-		}
-	}
-	return false
+	return commentTargetIndex.HasBoard(board)
 }
 
 // checkPushSumBoard is a one-shot crawl+match for scheduler follow-ups (no Run loop).
@@ -62,13 +49,14 @@ func checkPushSumBoard(board string) {
 }
 
 // checkCommentBoard is a one-shot comment check for tracked articles on a board.
+// Uses CommentTargetIndex (memory) — must not KEYS on every follow-up.
 func checkCommentBoard(board string) {
 	name := strings.ToLower(strings.TrimSpace(board))
 	if name == "" {
 		return
 	}
 	cc := *NewCommentChecker()
-	for _, code := range new(article.Articles).List() {
+	for _, code := range commentTargetIndex.CodesForBoard(name) {
 		a := models.Article().Find(code)
 		if a.Code == "" || a.Board == "" || !strings.EqualFold(a.Board, name) {
 			continue
