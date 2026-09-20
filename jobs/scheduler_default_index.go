@@ -7,7 +7,7 @@ import (
 )
 
 // BuildSubIndexFromUsers scans users once (may use KEYS internally) and caches boards.
-// Call Refresh on Idle poll only — not on every Active tick.
+// Call Refresh on IdlePoll in both Idle and Active — not on every Active board tick.
 func BuildSubIndexFromUsers() *redisSubIndex {
 	idx := NewRedisSubIndex(loadSubsFromUsers)
 	idx.Refresh()

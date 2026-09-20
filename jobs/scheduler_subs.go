@@ -21,7 +21,7 @@ func (f *fakeSubIndex) SubscribedBoards() []string {
 	return out
 }
 
-// redisSubIndex caches a subscription snapshot. Refresh from Idle poll only — not every Active tick.
+// redisSubIndex caches a subscription snapshot. Refresh on IdlePoll (Idle and Active) — not every Active board tick.
 // loader must not use Redis KEYS on the hot path.
 type redisSubIndex struct {
 	mu     sync.Mutex

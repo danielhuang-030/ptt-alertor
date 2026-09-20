@@ -161,10 +161,10 @@ func startJobs() {
 		go func() {
 			t := time.NewTicker(cfg.IdlePoll)
 			defer t.Stop()
+			// Refresh in both Idle and Active so HasAny/boards stay fresh
+			// (Active→Idle after last unsubscribe; new boards appear without waiting).
 			for range t.C {
-				if sched.State() == jobs.StateIdle {
-					idx.Refresh()
-				}
+				idx.Refresh()
 			}
 		}()
 	}
