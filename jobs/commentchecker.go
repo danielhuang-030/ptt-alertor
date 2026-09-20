@@ -71,7 +71,7 @@ func (cc commentChecker) Run() {
 			cc.Article = a
 			cc.checkSubscribers()
 		case pc := <-cc.ch:
-			ckCh <- pc
+			enqueueCheck(pc)
 		case <-cc.done:
 			cancel()
 			for len(ach) > 0 {

@@ -21,6 +21,11 @@ const workers = 300
 
 var ckCh = make(chan check)
 
+// enqueueCheck hands work to the existing message workers without changing sendMessage.
+func enqueueCheck(c check) {
+	ckCh <- c
+}
+
 var (
 	recentlyNotifiedEvents = make(map[string]time.Time)
 	recentlyNotifiedMutex  = &sync.Mutex{}

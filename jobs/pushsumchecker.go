@@ -92,7 +92,7 @@ func (psc pushSumChecker) Run() {
 				go psc.checkSubscribers(ba)
 			}
 		case pscker := <-psc.ch:
-			ckCh <- pscker
+			enqueueCheck(pscker)
 		case <-psc.done:
 			cancel()
 			for len(baCh) > 0 {
