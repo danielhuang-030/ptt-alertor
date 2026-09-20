@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -20,8 +21,14 @@ type Scheduler struct {
 	hasSubs func() bool
 	boards  func() []string
 
-	mu    sync.Mutex
-	state SchedulerState
+	mu         sync.Mutex
+	state      SchedulerState
+	refresher  BoardRefresher
+	started    bool
+	paused     bool
+	runCtx     context.Context
+	runCancel  context.CancelFunc
+	wg         sync.WaitGroup
 }
 
 // NewScheduler builds a scheduler with injectable subscription probes.
@@ -59,6 +66,12 @@ func (s *Scheduler) QueueLen() int {
 // TickOnce advances Idle/Active and enqueues board refreshes when Active.
 func (s *Scheduler) TickOnce(now time.Time) {
 	_ = now
+	s.mu.Lock()
+	paused := s.paused
+	s.mu.Unlock()
+	if paused {
+		return
+	}
 	if !s.hasSubs() {
 		s.mu.Lock()
 		s.state = StateIdle
