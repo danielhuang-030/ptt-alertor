@@ -120,8 +120,10 @@ func (s *Scheduler) handleItem(item WorkItem) {
 		}
 		if err := r.Refresh(item.Board); err != nil {
 			log.WithError(err).WithField("board", item.Board).Warn("board refresh failed")
+			s.noteRefreshFailure(item.Board, time.Now())
 			return
 		}
+		s.noteRefreshSuccess(item.Board)
 		s.maybeEnqueueFollowUps(item.Board)
 	case WorkCheckPushSum:
 		runPushSumBoardFn(item.Board)
@@ -134,13 +136,19 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 	defer s.wg.Done()
 	idle := s.cfg.IdlePoll
 	active := s.cfg.ActiveTick
+	high := s.cfg.HighTick
 	if idle < time.Second {
 		idle = 30 * time.Second
 	}
 	if active < time.Second {
 		active = 5 * time.Second
 	}
-	ticker := time.NewTicker(active)
+	if high < time.Second {
+		high = 5 * time.Second
+	}
+	// Use HighTick as Active cadence so high boards can enqueue on their interval;
+	// TickOnce gates each board via lastEnqueued + HighTick/ActiveTick.
+	ticker := time.NewTicker(idle)
 	defer ticker.Stop()
 	for {
 		select {
@@ -149,15 +157,28 @@ func (s *Scheduler) tickLoop(ctx context.Context) {
 		case now := <-ticker.C:
 			s.mu.Lock()
 			paused := s.paused
+			s.obsCounter++
+			obsN := s.obsCounter
 			s.mu.Unlock()
 			if paused {
 				continue
 			}
 			s.TickOnce(now)
-			if s.State() == StateIdle && idle > active {
+			// I4: lightweight periodic Info (every tick is fine — IdlePoll/HighTick paced).
+			state, qlen, boards, ok, fail := s.observabilitySnapshot()
+			if obsN%1 == 0 {
+				log.WithFields(log.Fields{
+					"state":        state,
+					"queue":        qlen,
+					"boards":       boards,
+					"refresh_ok":   ok,
+					"refresh_fail": fail,
+				}).Info("scheduler tick")
+			}
+			if s.State() == StateIdle {
 				ticker.Reset(idle)
 			} else {
-				ticker.Reset(active)
+				ticker.Reset(high)
 			}
 		}
 	}

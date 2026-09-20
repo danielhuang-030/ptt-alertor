@@ -53,7 +53,7 @@ func TestLoadSchedulerConfigOverrides(t *testing.T) {
 	if len(cfg.HighBoards) != 2 || cfg.HighBoards[0] != "gossiping" || cfg.HighBoards[1] != "lol" {
 		t.Fatalf("HighBoards=%v", cfg.HighBoards)
 	}
-	if cfg.HighTick < 5*time.Second {
-		t.Fatalf("HighTick too low: %v", cfg.HighTick)
+	if cfg.HighTick != 5*time.Second {
+		t.Fatalf("HighTick=%v want 5s (faster than ActiveTick 8s)", cfg.HighTick)
 	}
 }

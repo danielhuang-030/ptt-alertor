@@ -14,6 +14,8 @@ const (
 	StateActive
 )
 
+const defaultBoardBackoff = 60 * time.Second
+
 // Scheduler owns Idle/Active ticks and the work queue.
 type Scheduler struct {
 	cfg     SchedulerConfig
@@ -21,14 +23,20 @@ type Scheduler struct {
 	hasSubs func() bool
 	boards  func() []string
 
-	mu         sync.Mutex
-	state      SchedulerState
-	refresher  BoardRefresher
-	started    bool
-	paused     bool
-	runCtx     context.Context
-	runCancel  context.CancelFunc
-	wg         sync.WaitGroup
+	mu            sync.Mutex
+	state         SchedulerState
+	refresher     BoardRefresher
+	started       bool
+	paused        bool
+	runCtx        context.Context
+	runCancel     context.CancelFunc
+	wg            sync.WaitGroup
+	lastEnqueued  map[string]time.Time
+	nextAllowed   map[string]time.Time
+	highSet       map[string]struct{}
+	refreshOK     int
+	refreshFail   int
+	obsCounter    int
 }
 
 // NewScheduler builds a scheduler with injectable subscription probes.
@@ -42,12 +50,21 @@ func NewScheduler(cfg SchedulerConfig, hasSubs func() bool, boards func() []stri
 	if boards == nil {
 		boards = func() []string { return nil }
 	}
+	high := make(map[string]struct{}, len(cfg.HighBoards))
+	for _, b := range cfg.HighBoards {
+		if b != "" {
+			high[b] = struct{}{}
+		}
+	}
 	return &Scheduler{
-		cfg:     cfg,
-		queue:   NewWorkQueue(cfg.QueueSize),
-		hasSubs: hasSubs,
-		boards:  boards,
-		state:   StateIdle,
+		cfg:          cfg,
+		queue:        NewWorkQueue(cfg.QueueSize),
+		hasSubs:      hasSubs,
+		boards:       boards,
+		state:        StateIdle,
+		lastEnqueued: make(map[string]time.Time),
+		nextAllowed:  make(map[string]time.Time),
+		highSet:      high,
 	}
 }
 
@@ -63,9 +80,21 @@ func (s *Scheduler) QueueLen() int {
 	return s.queue.Len()
 }
 
-// TickOnce advances Idle/Active and enqueues board refreshes when Active.
+func (s *Scheduler) boardInterval(board string) time.Duration {
+	if _, ok := s.highSet[board]; ok {
+		if s.cfg.HighTick > 0 {
+			return s.cfg.HighTick
+		}
+		return 5 * time.Second
+	}
+	if s.cfg.ActiveTick > 0 {
+		return s.cfg.ActiveTick
+	}
+	return 5 * time.Second
+}
+
+// TickOnce advances Idle/Active and enqueues due board refreshes when Active.
 func (s *Scheduler) TickOnce(now time.Time) {
-	_ = now
 	s.mu.Lock()
 	paused := s.paused
 	s.mu.Unlock()
@@ -86,6 +115,42 @@ func (s *Scheduler) TickOnce(now time.Time) {
 		if name == "" {
 			continue
 		}
+		s.mu.Lock()
+		if until, ok := s.nextAllowed[name]; ok && now.Before(until) {
+			s.mu.Unlock()
+			continue
+		}
+		last := s.lastEnqueued[name]
+		interval := s.boardInterval(name)
+		due := last.IsZero() || !last.Add(interval).After(now)
+		if due {
+			s.lastEnqueued[name] = now
+		}
+		s.mu.Unlock()
+		if !due {
+			continue
+		}
 		s.enqueueWork(WorkItem{Kind: WorkRefreshBoard, Board: name})
 	}
+}
+
+func (s *Scheduler) noteRefreshFailure(board string, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshFail++
+	backoff := defaultBoardBackoff
+	s.nextAllowed[board] = now.Add(backoff)
+}
+
+func (s *Scheduler) noteRefreshSuccess(board string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshOK++
+	delete(s.nextAllowed, board)
+}
+
+func (s *Scheduler) observabilitySnapshot() (state SchedulerState, qlen, boards, ok, fail int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state, s.queue.Len(), len(s.boards()), s.refreshOK, s.refreshFail
 }

@@ -3,6 +3,8 @@ package jobs
 import (
 	"strings"
 
+	log "github.com/Ptt-Alertor/logrus"
+
 	"github.com/Ptt-Alertor/ptt-alertor/models"
 	"github.com/Ptt-Alertor/ptt-alertor/models/article"
 	"github.com/Ptt-Alertor/ptt-alertor/models/pushsum"
@@ -91,7 +93,16 @@ func (s *Scheduler) maybeEnqueueFollowUps(board string) {
 	}
 }
 
-// enqueueWork wraps TryEnqueue; I6 adds drop logging in a later pass via this helper.
+// enqueueWork wraps TryEnqueue and logs drops (Debug for duplicate, Warn for full).
 func (s *Scheduler) enqueueWork(item WorkItem) EnqueueStatus {
-	return s.queue.TryEnqueue(item)
+	st := s.queue.TryEnqueue(item)
+	switch st {
+	case EnqueueDuplicate:
+		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Debug("work queue drop: duplicate")
+	case EnqueueFull:
+		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Warn("work queue drop: full")
+	case EnqueueInvalid:
+		log.WithFields(log.Fields{"board": item.Board, "kind": item.Kind}).Debug("work queue drop: invalid")
+	}
+	return st
 }
