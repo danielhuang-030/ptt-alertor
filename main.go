@@ -144,10 +144,30 @@ func main() {
 }
 
 func startJobs() {
-	go jobs.NewChecker().Run()
-	go jobs.NewPushSumChecker().Run()
-	go jobs.NewCommentChecker().Run()
-	go jobs.NewPttMonitor().Run()
+	cfg := jobs.LoadSchedulerConfig()
+	if cfg.Legacy {
+		log.Info("SCHED_LEGACY enabled: starting classic checkers")
+		go jobs.NewChecker().Run()
+		go jobs.NewPushSumChecker().Run()
+		go jobs.NewCommentChecker().Run()
+		go jobs.NewPttMonitor().Run()
+	} else {
+		log.Info("Starting resource-saving scheduler")
+		idx := jobs.BuildSubIndexFromUsers()
+		sched := jobs.NewScheduler(cfg, idx.HasAny, idx.SubscribedBoards)
+		// Ruling: do not start classic PttMonitor here — it would re-launch Checker on recovery.
+		// Scheduler.Pause/Resume exist for a future monitor adapter.
+		go sched.Start(context.Background())
+		go func() {
+			t := time.NewTicker(cfg.IdlePoll)
+			defer t.Stop()
+			for range t.C {
+				if sched.State() == jobs.StateIdle {
+					idx.Refresh()
+				}
+			}
+		}()
+	}
 	c := cron.New()
 	c.AddJob("@hourly", jobs.NewTop())
 	c.AddJob("@every 48h", jobs.NewPushSumKeyReplacer())
@@ -155,13 +175,5 @@ func startJobs() {
 }
 
 func init() {
-	// for initial app
-	jobs.NewPushSumKeyReplacer().Run()
-	jobs.NewMigrateBoard(map[string]string{}).Run()
-	jobs.NewTop().Run()
-	jobs.NewCacheCleaner().Run()
-	jobs.NewGenerator().Run()
-	jobs.NewFetcher().Run()
-	jobs.NewMigrateDB().Run()
-	jobs.NewCategoryCleaner().Run()
+	jobs.RunOneshotJobsIfEnabled()
 }

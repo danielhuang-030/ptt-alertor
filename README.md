@@ -220,3 +220,18 @@ DMM, oas, bestpika, Zero0910, lucky0509, wbreeze, chang0206, lindo0130, hungys, 
 ### Facebook
 
 Mr.clu, Woqeker
+
+## Scheduler（資源節省模式）
+
+預設啟用中央 Scheduler（Idle／Active），不再在空轉時以亞秒級迴圈抓板。
+
+| 變數 | 說明 | 預設 |
+|------|------|------|
+| `SCHED_IDLE_POLL` | Idle 時檢查訂閱的間隔 | `30s` |
+| `SCHED_ACTIVE_TICK` | 有訂閱時刷新週期 | `5s` |
+| `SCHED_WORKERS` | worker 數 | `2` |
+| `SCHED_QUEUE_SIZE` | 佇列容量 | `256` |
+| `SCHED_LEGACY` | `1` 時改回舊 Checker 迴圈 | `0` |
+| `RUN_ONESHOT_JOBS` | `1` 時才跑啟動遷移／清理／Fetcher | `0` |
+
+設計與計劃見 `docs/superpowers/specs/`、`docs/superpowers/plans/`。
