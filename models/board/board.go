@@ -12,6 +12,10 @@ import (
 	"github.com/Ptt-Alertor/ptt-alertor/ptt/web"
 )
 
+// Package-level hooks for FetchArticlesErr (swappable in tests).
+var rssBuildArticles = rss.BuildArticles
+var webFetchArticles = web.FetchArticles
+
 type BoardNotExistError struct {
 	Suggestion string
 }
@@ -149,7 +153,7 @@ func (bd Board) FetchArticlesErr() (articles article.Articles, err error) {
 	if bd.Name == "" {
 		return nil, nil
 	}
-	articles, err = rss.BuildArticles(bd.Name)
+	articles, err = rssBuildArticles(bd.Name)
 	if err != nil {
 		if err == rss.ErrTooManyRequests {
 			log.WithError(err).Warning("RSS Parse Failed")
@@ -157,7 +161,7 @@ func (bd Board) FetchArticlesErr() (articles article.Articles, err error) {
 		}
 		log.WithField("board", bd.Name).WithError(err).Error("RSS Parse Failed, Switch to HTML Crawler")
 		var htmlErr error
-		articles, htmlErr = web.FetchArticles(bd.Name, -1)
+		articles, htmlErr = webFetchArticles(bd.Name, -1)
 		if htmlErr != nil {
 			log.WithField("board", bd.Name).WithError(htmlErr).Error("HTML Parse Failed")
 			return nil, htmlErr
