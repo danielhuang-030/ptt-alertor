@@ -71,7 +71,7 @@ func (cc commentChecker) Run() {
 			cc.Article = a
 			cc.checkSubscribers()
 		case pc := <-cc.ch:
-			enqueueCheck(pc)
+			enqueueCheckFn(pc)
 		case <-cc.done:
 			cancel()
 			for len(ach) > 0 {
@@ -138,5 +138,5 @@ func (cc commentChecker) send(account string) {
 	cc.subType = "push"
 	cc.word = cc.Article.Code
 	cc.Profile = models.User().Find(account).Profile
-	cc.ch <- cc
+	enqueueCheckFn(cc)
 }

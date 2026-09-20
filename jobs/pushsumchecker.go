@@ -92,7 +92,7 @@ func (psc pushSumChecker) Run() {
 				go psc.checkSubscribers(ba)
 			}
 		case pscker := <-psc.ch:
-			enqueueCheck(pscker)
+			enqueueCheckFn(pscker)
 		case <-psc.done:
 			cancel()
 			for len(baCh) > 0 {
@@ -207,7 +207,7 @@ func (psc pushSumChecker) checkPushSum(u user.User, ba BoardArticles, checkFn ch
 	if len(articles) > 0 {
 		psc.articles = psc.toSendArticles(ids, articles)
 		if len(psc.articles) > 0 {
-			psc.ch <- psc
+			enqueueCheckFn(psc)
 		}
 	}
 }

@@ -39,7 +39,7 @@ func TestSchedulerWorkerCallsRefresh(t *testing.T) {
 	}
 	s.Stop()
 	// after MarkDone, can enqueue again
-	if !s.queue.TryEnqueue(WorkItem{Kind: WorkRefreshBoard, Board: "gossiping"}) {
+	if s.queue.TryEnqueue(WorkItem{Kind: WorkRefreshBoard, Board: "gossiping"}) != EnqueueOK {
 		t.Fatal("should allow re-enqueue after done")
 	}
 }

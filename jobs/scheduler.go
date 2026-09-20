@@ -86,6 +86,6 @@ func (s *Scheduler) TickOnce(now time.Time) {
 		if name == "" {
 			continue
 		}
-		s.queue.TryEnqueue(WorkItem{Kind: WorkRefreshBoard, Board: name})
+		s.enqueueWork(WorkItem{Kind: WorkRefreshBoard, Board: name})
 	}
 }

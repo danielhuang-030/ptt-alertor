@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -20,11 +21,15 @@ type WorkItem struct {
 	Board string
 }
 
-// WorkQueue is a bounded queue with at most one queued/in-flight item per board.
+func pendingKey(item WorkItem) string {
+	return fmt.Sprintf("%d:%s", item.Kind, item.Board)
+}
+
+// WorkQueue is a bounded queue with at most one queued/in-flight item per (Kind, Board).
 type WorkQueue struct {
 	mu       sync.Mutex
 	ch       chan WorkItem
-	pending  map[string]struct{} // queued or in-flight
+	pending  map[string]struct{} // queued or in-flight; key = kind:board
 	inflight map[string]struct{}
 }
 
@@ -40,22 +45,33 @@ func NewWorkQueue(size int) *WorkQueue {
 	}
 }
 
-// TryEnqueue adds an item if capacity and per-board rules allow.
-func (q *WorkQueue) TryEnqueue(item WorkItem) bool {
+// EnqueueStatus distinguishes why TryEnqueue failed (for logging).
+type EnqueueStatus int
+
+const (
+	EnqueueOK EnqueueStatus = iota
+	EnqueueDuplicate
+	EnqueueFull
+	EnqueueInvalid
+)
+
+// TryEnqueue adds an item if capacity and per-(kind,board) rules allow.
+func (q *WorkQueue) TryEnqueue(item WorkItem) EnqueueStatus {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if item.Board == "" {
-		return false
+		return EnqueueInvalid
 	}
-	if _, ok := q.pending[item.Board]; ok {
-		return false
+	key := pendingKey(item)
+	if _, ok := q.pending[key]; ok {
+		return EnqueueDuplicate
 	}
 	select {
 	case q.ch <- item:
-		q.pending[item.Board] = struct{}{}
-		return true
+		q.pending[key] = struct{}{}
+		return EnqueueOK
 	default:
-		return false
+		return EnqueueFull
 	}
 }
 
@@ -66,19 +82,20 @@ func (q *WorkQueue) Pop(ctx context.Context) (WorkItem, bool) {
 		return WorkItem{}, false
 	case item := <-q.ch:
 		q.mu.Lock()
-		q.inflight[item.Board] = struct{}{}
+		q.inflight[pendingKey(item)] = struct{}{}
 		// keep pending until MarkDone so duplicates stay rejected while in-flight
 		q.mu.Unlock()
 		return item, true
 	}
 }
 
-// MarkDone clears board reservation after work finishes.
-func (q *WorkQueue) MarkDone(board string) {
+// MarkDone clears (kind,board) reservation after work finishes.
+func (q *WorkQueue) MarkDone(item WorkItem) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	delete(q.inflight, board)
-	delete(q.pending, board)
+	key := pendingKey(item)
+	delete(q.inflight, key)
+	delete(q.pending, key)
 }
 
 // Len returns approximate queued items (not including in-flight already popped).

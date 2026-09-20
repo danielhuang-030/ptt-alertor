@@ -167,7 +167,7 @@ func (c Checker) Run() {
 			go checkAuthorSubscriber(bd, c)
 		//step 3: send notification
 		case cker := <-c.ch:
-			enqueueCheck(cker)
+			enqueueCheckFn(cker)
 		case <-c.done:
 			cancel()
 			for len(boardCh) > 0 {

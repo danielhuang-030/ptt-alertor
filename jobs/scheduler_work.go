@@ -12,6 +12,13 @@ type BoardRefresher interface {
 	Refresh(board string) error
 }
 
+// BoardRefresherFunc adapts a function to BoardRefresher.
+type BoardRefresherFunc func(board string) error
+
+func (f BoardRefresherFunc) Refresh(board string) error {
+	return f(board)
+}
+
 type defaultBoardRefresher struct{}
 
 func (defaultBoardRefresher) Refresh(board string) error {
@@ -93,7 +100,7 @@ func (s *Scheduler) workerLoop(ctx context.Context) {
 			return
 		}
 		s.handleItem(item)
-		s.queue.MarkDone(item.Board)
+		s.queue.MarkDone(item)
 	}
 }
 
@@ -113,9 +120,13 @@ func (s *Scheduler) handleItem(item WorkItem) {
 		}
 		if err := r.Refresh(item.Board); err != nil {
 			log.WithError(err).WithField("board", item.Board).Warn("board refresh failed")
+			return
 		}
-	case WorkCheckPushSum, WorkCheckComment:
-		// Follow-ups: best-effort hooks; full wiring can extend without busy loops.
+		s.maybeEnqueueFollowUps(item.Board)
+	case WorkCheckPushSum:
+		runPushSumBoardFn(item.Board)
+	case WorkCheckComment:
+		runCommentBoardFn(item.Board)
 	}
 }
 
