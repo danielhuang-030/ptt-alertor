@@ -26,7 +26,7 @@ services:
       - pttalertor-network
 
   redis:
-    image: redis:alpine
+    image: redis:8-alpine
     container_name: pttalertor-redis
     restart: always
     ports:
