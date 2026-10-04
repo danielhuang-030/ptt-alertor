@@ -56,24 +56,24 @@ func (bc Broadcaster) Send(plfms []string) error {
 
 func (bc Broadcaster) sendEmail(u *user.User) {
 	bc.Profile.Email = u.Profile.Email
-	ckCh <- bc
+	enqueueCheck(bc)
 }
 
 func (bc Broadcaster) sendLine(u *user.User) {
 	bc.Profile.Line = u.Profile.Line
 	bc.Profile.LineAccessToken = u.Profile.LineAccessToken
-	ckCh <- bc
+	enqueueCheck(bc)
 }
 
 func (bc Broadcaster) sendMessenger(u *user.User) {
 	bc.Profile.Messenger = u.Profile.Messenger
-	ckCh <- bc
+	enqueueCheck(bc)
 }
 
 func (bc Broadcaster) sendTelegram(u *user.User) {
 	bc.Profile.Telegram = u.Profile.Telegram
 	bc.Profile.TelegramChat = u.Profile.TelegramChat
-	ckCh <- bc
+	enqueueCheck(bc)
 }
 
 func (bc Broadcaster) sendDiscord(u *user.User) {
@@ -83,6 +83,6 @@ func (bc Broadcaster) sendDiscord(u *user.User) {
 		// 並最終呼叫 discord.PushMessage(channelID, message, embed)
 		// 目前我們只需要將帶有 DiscordChannelID 的 Broadcaster 物件發送到 ckCh
 		bc.subType = "discord_broadcast" // 或一個更合適的 subType
-		ckCh <- bc
+		enqueueCheck(bc)
 	}
 }

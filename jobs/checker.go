@@ -167,7 +167,7 @@ func (c Checker) Run() {
 			go checkAuthorSubscriber(bd, c)
 		//step 3: send notification
 		case cker := <-c.ch:
-			ckCh <- cker
+			enqueueCheckFn(cker)
 		case <-c.done:
 			cancel()
 			for len(boardCh) > 0 {
@@ -297,7 +297,7 @@ func checkKeyword(standardizedKeyword string, bd *board.Board, cker Checker) {
 		cker.subType = "keyword"
 		cker.word = standardizedKeyword // Store standardized word
 		// log.WithFields(log.Fields{"board": cker.board, "keyword": cker.keyword, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkKeyword") // Commented out
-		cker.ch <- cker
+		enqueueCheckFn(cker)
 	}
 }
 
@@ -345,6 +345,6 @@ func checkAuthor(standardizedAuthor string, bd *board.Board, cker Checker) {
 		cker.subType = "author"
 		cker.word = standardizedAuthor // Store standardized word
 		// log.WithFields(log.Fields{"board": cker.board, "author": cker.author, "sub_type": cker.subType, "word": cker.word, "articles_count": len(cker.articles), "profile_account": cker.Profile.Account, "discord_ch_id": cker.Profile.DiscordChannelID}).Debug("Preparing to send Checker via c.ch from checkAuthor") // Commented out
-		cker.ch <- cker
+		enqueueCheckFn(cker)
 	}
 }

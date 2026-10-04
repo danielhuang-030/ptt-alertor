@@ -21,6 +21,14 @@ const workers = 300
 
 var ckCh = make(chan check)
 
+// enqueueCheck hands work to the existing message workers without changing sendMessage.
+func enqueueCheck(c check) {
+	ckCh <- c
+}
+
+// enqueueCheckFn is the notify sink; tests may swap it to spy on matches.
+var enqueueCheckFn = enqueueCheck
+
 var (
 	recentlyNotifiedEvents = make(map[string]time.Time)
 	recentlyNotifiedMutex  = &sync.Mutex{}

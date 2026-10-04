@@ -144,10 +144,33 @@ func main() {
 }
 
 func startJobs() {
-	go jobs.NewChecker().Run()
-	go jobs.NewPushSumChecker().Run()
-	go jobs.NewCommentChecker().Run()
-	go jobs.NewPttMonitor().Run()
+	cfg := jobs.LoadSchedulerConfig()
+	if cfg.Legacy {
+		log.Info("SCHED_LEGACY enabled: starting classic checkers")
+		go jobs.NewChecker().Run()
+		go jobs.NewPushSumChecker().Run()
+		go jobs.NewCommentChecker().Run()
+		go jobs.NewPttMonitor().Run()
+	} else {
+		log.Info("Starting resource-saving scheduler")
+		idx := jobs.BuildSubIndexFromUsers()
+		sched := jobs.NewScheduler(cfg, idx.HasAny, idx.SubscribedBoards)
+		// Thin PTT monitor: Pause/Resume only — never relaunches classic checkers.
+		go jobs.RunSchedulerPttMonitor(sched)
+		// Warm comment target index before scheduler Start so first follow-ups see targets.
+		jobs.CommentTargets().Refresh()
+		go sched.Start(context.Background())
+		go func() {
+			t := time.NewTicker(cfg.IdlePoll)
+			defer t.Stop()
+			// Refresh SubIndex + comment targets on IdlePoll only (never Active hot path KEYS).
+			// Keeps HasAny/boards fresh (Active→Idle after last unsubscribe; new boards appear).
+			for range t.C {
+				idx.Refresh()
+				jobs.CommentTargets().Refresh()
+			}
+		}()
+	}
 	c := cron.New()
 	c.AddJob("@hourly", jobs.NewTop())
 	c.AddJob("@every 48h", jobs.NewPushSumKeyReplacer())
@@ -155,13 +178,5 @@ func startJobs() {
 }
 
 func init() {
-	// for initial app
-	jobs.NewPushSumKeyReplacer().Run()
-	jobs.NewMigrateBoard(map[string]string{}).Run()
-	jobs.NewTop().Run()
-	jobs.NewCacheCleaner().Run()
-	jobs.NewGenerator().Run()
-	jobs.NewFetcher().Run()
-	jobs.NewMigrateDB().Run()
-	jobs.NewCategoryCleaner().Run()
+	jobs.RunOneshotJobsIfEnabled()
 }
