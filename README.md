@@ -80,6 +80,13 @@ Ptt Alertor 的許多功能可以透過環境變數進行配置。以下是一�
 
 (此處未來可以補充其他服務相關的環境變數，如 `PTT_ALERTOR_HOST_PORT`, `AUTH_USER`, `AUTH_PW` 等。)
 
+### Redis 與埠綁定
+
+*   Redis 不對主機開埠，只有 compose 內部網路（app 容器）連得到，因此不設密碼，`protected-mode` 關閉（開著會擋掉其他容器的連線）。
+*   維運要連 Redis：`docker compose exec redis redis-cli`。
+*   若日後要加密碼，app 支援選填的 `REDIS_PASSWORD` 環境變數（有設才帶 AUTH）。
+*   Web（`PTT_ALERTOR_HOST_PORT`）預設只綁 `127.0.0.1`；需要直接對外時設 `PTT_ALERTOR_BIND=0.0.0.0`，或改走 tunnel／反向代理。gops 一律只綁本機。
+
 ### 看板資料儲存後端設定 (Board Data Storage Backend)
 
 Ptt Alertor 看板資料（如文章列表）的**預設儲存方式是使用 Redis (`redis`)**。當您選擇使用 Redis 作為儲存後端（包括預設情況）或快取時，**請務必確保 `REDIS_HOST_PORT` 環境變數已正確設定**，否則服務可能無法啟動或正常運作。您可以根據您的部署環境和需求，透過以下環境變數選擇不同的儲存後端。
