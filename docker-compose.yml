@@ -2,8 +2,9 @@ services:
   ptt-alertor:
     build: .
     ports:
-      - "${PTT_ALERTOR_HOST_PORT:-9090}:9090"  # PTT Alertor Web 服務
-      - "${GOPS_HOST_PORT:-6060}:6060"        # gops agent 監控服務
+      # 預設只綁本機；需要對外（例如 webhook）時在 .env 設 PTT_ALERTOR_BIND=0.0.0.0
+      - "${PTT_ALERTOR_BIND:-127.0.0.1}:${PTT_ALERTOR_HOST_PORT:-9090}:9090"  # PTT Alertor Web 服務
+      - "127.0.0.1:${GOPS_HOST_PORT:-6060}:6060"  # gops agent 監控服務（僅本機）
     restart: always
     environment:
       - AUTH_USER=${AUTH_USER:-admin}
@@ -17,6 +18,7 @@ services:
       # - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID:-}
       - REDIS_ENDPOINT=pttalertor-redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       - APP_HOST=http://localhost:9090
       - BOARD_DRIVER_TYPE=${BOARD_DRIVER_TYPE:-}
       - BOARD_FILE_STORAGE_PATH=${BOARD_FILE_STORAGE_PATH:-}
@@ -29,8 +31,18 @@ services:
     image: redis:8-alpine
     container_name: pttalertor-redis
     restart: always
+    # 密碼從環境變數寫進容器內的暫存設定檔，不出現在指令列參數
+    command:
+      - sh
+      - -c
+      - |
+        umask 077
+        printf 'requirepass %s\nprotected-mode yes\n' "$$REDIS_PASSWORD" > /tmp/redis.conf
+        exec redis-server /tmp/redis.conf
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"  # 僅本機，維運用；app 走內部網路
     volumes:
       - ./storage/redis:/data
     networks:
